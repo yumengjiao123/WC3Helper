@@ -33,8 +33,7 @@
 *.la
 *.a
 *.lib
-
-!/lib/**/*.lib
+!/libs/**/*.lib
 
 # Executables
 *.exe
