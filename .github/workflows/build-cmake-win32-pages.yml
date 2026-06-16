@@ -1,17 +1,13 @@
 name: CMake MSVC x86 Build & Deploy Pages
-
-# 推送主分支触发
 on:
   push:
     branches: [ main, master ]
 
-# Pages部署权限
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# 全局变量，按需修改
 env:
   BUILD_DIR: build_win32
   CONFIG: Release
@@ -21,76 +17,63 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      # 拉取源码
       - name: Checkout source
         uses: actions/checkout@v4
 
-      # 加载VS MSVC x86环境，移除vsversion避免找不到VS报错
-      - name: Setup MSVC 2022 x86
+      - name: Setup MSVC x86
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x86
 
-      # 创建构建目录，CMake生成32位工程（移除install prefix参数）
       - name: CMake Configure
         run: |
           mkdir ${{ env.BUILD_DIR }}
           cd ${{ env.BUILD_DIR }}
           cmake .. -A ${{ env.ARCH }}
 
-      # MSBuild编译Release
       - name: CMake Build
         run: |
           cd ${{ env.BUILD_DIR }}
           cmake --build . --config ${{ env.CONFIG }} --parallel
-          # 打印编译目录文件，调试用
-          ls Release
 
-      # 打包步骤：直接读取build下的strom80.mix，抛弃install目录
-      - name: Package binaries & build page
+      - name: Package & Generate Page
         run: |
           mkdir pages
-          $targetFile = "$env:BUILD_DIR\Release\strom80.mix"
-          # 判断文件是否存在再操作
-          if (Test-Path $targetFile) {
-              # 复制文件到pages目录
-              Copy-Item $targetFile pages\
-              # 压缩成zip包
-              Compress-Archive -Path pages\strom80.mix -DestinationPath pages/win32-release.zip
-          } else {
-              Write-Error "未找到编译产物 strom80.mix，请检查CMake输出配置！"
-              exit 1
+          $file = "$env:BUILD_DIR\Release\strom80.mix"
+          if (-not (Test-Path $file)) {
+            Write-Error "Missing file strom80.mix"
+            exit 1
           }
-          # 生成下载网页
-          @'
+          Copy-Item $file pages\
+          Compress-Archive -Path pages\strom80.mix -DestinationPath pages\win32-release.zip
+
+          $html = @'
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Win32 构建产物下载</title>
+<meta charset="utf-8">
+<title>Download strom80.mix</title>
 </head>
 <body>
-<h2>32位 Release 插件 strom80.mix</h2>
-<p><a href="win32-release.zip">下载压缩包 win32-release.zip</a></p>
-<p><a href="strom80.mix">直接下载 strom80.mix</a></p>
+<h3>Win32 Release File</h3>
+<p><a href="strom80.mix">strom80.mix</a></p>
+<p><a href="win32-release.zip">zip package</a></p>
 </body>
 </html>
-'@ | Out-File pages/index.html -Encoding utf8
+'@
+          $html | Out-File pages\index.html -Encoding utf8
 
-      # 上传pages产物用于部署
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: pages
 
-  # 部署Pages页面
   deploy:
     needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
-        id: deploy
         uses: actions/deploy-pages@v4
+        id: deploy
