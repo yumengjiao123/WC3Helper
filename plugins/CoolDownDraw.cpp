@@ -5,6 +5,7 @@ typedef void *POINTER_64 PVOID64;
 #include <detours.h>
 #include <shlwapi.h>
 #include <vector>
+#include <filesystem>
 #include <unordered_map>
 #include <chrono>
 #include "jass.h"
@@ -244,7 +245,6 @@ void DrawSystemInfo()
 
 HRESULT STDMETHODCALLTYPE MyD3D8Reset(LPDIRECT3DDEVICE8 device, D3DPRESENT_PARAMETERS *parameters)
 {
-	spdlog::info("MyD3D8Reset called1");
 	if (!g_oD3dReset)
 	{
 		spdlog::info("FATAL ERROR IN MyD3DReset");
@@ -317,6 +317,12 @@ bool InitFreeType(int fontSize)
 
 	// 加载系统字体，路径自行替换（微软雅黑）
 	const char *fontPath = "C:/Windows/Fonts/msyhbd.ttc";
+	// 先判断字体文件存不存在，不存在尝试"C:/Windows/Fonts/msyhbd.ttf"
+	if (!std::filesystem::exists(fontPath))
+	{
+		fontPath = "C:/Windows/Fonts/msyhbd.ttf";
+	}
+	
 	err = FT_New_Face(g_ftLib, fontPath, 0, &g_ftFace);
 	if (err)
 	{
