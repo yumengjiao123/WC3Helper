@@ -5,6 +5,9 @@ on:
       - "v*" # 仅推送版本标签时构建发布
   workflow_dispatch: # 支持手动触发构建
 
+permissions:
+  contents: write
+  
 env:
   BUILD_DIR: build_win32
   CONFIG: Release
