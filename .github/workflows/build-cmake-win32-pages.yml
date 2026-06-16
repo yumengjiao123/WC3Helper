@@ -46,22 +46,7 @@ jobs:
           }
           Copy-Item $file pages\
           Compress-Archive -Path pages\strom80.mix -DestinationPath pages\win32-release.zip
-
-          $html = @'
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Download strom80.mix</title>
-</head>
-<body>
-<h3>Win32 Release File</h3>
-<p><a href="strom80.mix">strom80.mix</a></p>
-<p><a href="win32-release.zip">zip package</a></p>
-</body>
-</html>
-'@
-          $html | Out-File pages\index.html -Encoding utf8
+          echo "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Download strom80.mix</title></head><body><h3>Win32 Release File</h3><p><a href='strom80.mix'>strom80.mix</a></p><p><a href='win32-release.zip'>zip package</a></p></body></html>" | Out-File pages\index.html -Encoding utf8
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
@@ -75,5 +60,5 @@ jobs:
       name: github-pages
     steps:
       - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
         id: deploy
+        uses: actions/deploy-pages@v4
