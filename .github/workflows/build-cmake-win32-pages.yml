@@ -1,12 +1,9 @@
-name: CMake MSVC x86 Build & Deploy Pages
+name: CMake MSVC x86 Build & Upload Release
 on:
   push:
-    branches: [ main, master ]
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+    tags:
+      - "v*" # 仅推送版本标签时构建发布
+  workflow_dispatch: # 支持手动触发构建
 
 env:
   BUILD_DIR: build_win32
@@ -36,29 +33,21 @@ jobs:
           cd ${{ env.BUILD_DIR }}
           cmake --build . --config ${{ env.CONFIG }} --parallel
 
-      - name: Package & Generate Page
+      # 打包产物
+      - name: Package file
         run: |
-          mkdir pages
-          $file = "$env:BUILD_DIR\Release\strom80.mix"
-          if (-not (Test-Path $file)) {
-            Write-Error "Missing file strom80.mix"
-            exit 1
-          }
-          Copy-Item $file pages\
-          Compress-Archive -Path pages\strom80.mix -DestinationPath pages\win32-release.zip
-          echo "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Download strom80.mix</title></head><body><h3>Win32 Release File</h3><p><a href='strom80.mix'>strom80.mix</a></p><p><a href='win32-release.zip'>zip package</a></p></body></html>" | Out-File pages\index.html -Encoding utf8
+          mkdir output
+          Copy-Item "$env:BUILD_DIR\Release\strom80.mix" output\
+          Compress-Archive -Path output\strom80.mix -DestinationPath output\win32-release.zip
 
-      - name: Upload Pages Artifact
-        uses: actions/upload-pages-artifact@v3
+      # 上传到Release资产
+      - name: Upload binary to Release
+        uses: softprops/action-gh-release@v2
         with:
-          path: pages
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deploy
-        uses: actions/deploy-pages@v4
+          files: |
+            output/strom80.mix
+            output/win32-release.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
