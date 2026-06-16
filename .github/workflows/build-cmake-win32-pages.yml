@@ -1,78 +1,64 @@
-name: CMake MSVC x86 Build & Deploy Pages
-
-# 推送主分支触发
-on:
-  push:
-    branches: [ main, master ]
-
-# Pages部署权限
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-# 全局变量，按需修改
 env:
   BUILD_DIR: build_win32
-  INSTALL_DIR: install_win32
   CONFIG: Release
-  ARCH: Win32
 
-jobs:
-  build:
-    runs-on: windows-latest
-    steps:
-      # 拉取源码
-      - name: Checkout source
-        uses: actions/checkout@v4
+steps:
+  - name: Checkout source
+    uses: actions/checkout@v4
 
-      # 加载VS2022 MSVC环境
-      - name: Setup MSVC 2022 x86
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          # vsversion: "2022"
-          arch: x86
+  - name: Init MSVC x86 32bit env manually
+    run: |
+      $vsPath = & "C:\Program Files\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+      cmd /c "$vsPath\VC\Auxiliary\Build\vcvarsall.bat" x86 && set > env.txt
+      Get-Content env.txt | ForEach-Object {
+        if ($_ -match '^(.*?)=(.*)$') {
+          [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
+        }
+      }
+      cl.exe
+      cmake --version
 
-      # 创建构建目录，CMake生成32位工程
-      - name: CMake Configure
-        run: |
-          mkdir ${{ env.BUILD_DIR }}
-          cd ${{ env.BUILD_DIR }}
-          cmake .. -A ${{ env.ARCH }} -DCMAKE_INSTALL_PREFIX=../${{ env.INSTALL_DIR }}
+  # CMake 生成32位工程
+  - name: CMake Configure Win32
+    run: |
+      mkdir $env:BUILD_DIR
+      cd $env:BUILD_DIR
+      cmake .. -A Win32
 
-      # MSBuild编译Release
-      - name: CMake Build
-        run: |
-          cd ${{ env.BUILD_DIR }}
-          cmake --build . --config ${{ env.CONFIG }} --parallel
+  # 编译 Release
+  - name: CMake Build
+    run: |
+      cd $env:BUILD_DIR
+      cmake --build . --config $env:CONFIG --parallel
 
-      # 安装文件到install目录（exe/dll/lib/header）
-      - name: CMake Install
-        run: |
-          cd ${{ env.BUILD_DIR }}
-          cmake --install . --config ${{ env.CONFIG }}
+  # 新建打包目录，复制编译产物 aa.mix
+  - name: Copy output file
+    run: |
+      mkdir pages
+      # 你的编译输出路径 build_win32/Release/aa.mix
+      Copy-Item "$env:BUILD_DIR\Release\aa.mix" -Destination pages\aa.mix
 
-      # 打包所有输出为zip，放入pages站点根目录
-      - name: Package binaries
-        run: |
-          mkdir pages
-          Compress-Archive -Path ${{ env.INSTALL_DIR }}/* -DestinationPath pages/win32-release.zip
+  # 打包压缩包 + 生成下载网页
+  - name: Package & Create index.html
+    run: |
+      Compress-Archive -Path pages\aa.mix -DestinationPath pages\win32-release.zip
+      @'
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Win32 Release Build</title>
+      </head>
+      <body>
+        <h1>Windows 32位 插件 aa.mix</h1>
+        <p><a href="win32-release.zip">下载压缩包 win32-release.zip</a></p>
+        <p>单独文件：<a href="aa.mix">aa.mix</a></p>
+      </body>
+      </html>
+      '@ | Out-File pages/index.html -Encoding utf8
 
-      # 上传pages产物用于部署
-      - name: Upload Pages Artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: pages
-
-  # 部署Pages页面
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deploy
-        uses: actions/deploy-pages@v4
-        
+  - name: Upload Pages Artifact
+    uses: actions/upload-pages-artifact@v3
+    with:
+      path: pages
+      
