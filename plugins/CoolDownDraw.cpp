@@ -60,7 +60,7 @@ struct TextDrawItem
 	std::wstring text;
 	bool bAdj;
 	bool bCenter;
-	int fontSize; // 屏幕像素字体大小（1024x768 空间），0 表示使用默认值
+	int fontSize;									 // 屏幕像素字体大小（1024x768 空间），0 表示使用默认值
 	std::chrono::steady_clock::time_point timestamp; // 入队时间，用于过期过滤
 };
 
@@ -120,7 +120,6 @@ DWORD g_oIsDrawSkillPanel = 0;
 DWORD g_oIsDrawSkillPanelOverlay = 0;
 DWORD g_oIsNeedDrawUnit2 = 0;
 
-DWORD g_AbilityVTable;
 DWORD g_DrawSkillPanelOffset = 0;
 DWORD g_DrawSkillPanelOverlayOffset = 0;
 DWORD g_IsNeedDrawUnitOriginOffset = 0;
@@ -147,7 +146,7 @@ static void DrawTextToScreen(float x, float y, const wchar_t *text, DWORD color,
 		return;
 
 	// 上限保护：队列积压超过500条时直接清空（兜底）
-	if (g_textDrawQueue.size() > 500)
+	if (g_textDrawQueue.size() > 60)
 		g_textDrawQueue.clear();
 
 	// 不再直接绘制，只加入缓存队列
@@ -333,7 +332,7 @@ bool InitFreeType(int fontSize)
 	{
 		fontPath = "C:/Windows/Fonts/msyhbd.ttf";
 	}
-	
+
 	err = FT_New_Face(g_ftLib, fontPath, 0, &g_ftFace);
 	if (err)
 	{
@@ -989,9 +988,12 @@ int __stdcall MyWglSwapLayerBuffers(HDC dc, unsigned int b)
 	if (b & WGL_SWAP_MAIN_PLANE)
 	{
 		DrawSystemInfo();
+
+		auto now = std::chrono::steady_clock::now();
 		for (const auto &item : g_textDrawQueue)
 		{
-			DrawTextToScreenReal(item.x, item.y, item.text.c_str(), item.color, item.bAdj, item.bCenter, item.fontSize);
+			if (std::chrono::duration_cast<std::chrono::milliseconds>(now - item.timestamp).count() < 1000)
+				DrawTextToScreenReal(item.x, item.y, item.text.c_str(), item.color, item.bAdj, item.bCenter, item.fontSize);
 		}
 
 		g_textDrawQueue.clear();
@@ -1189,7 +1191,6 @@ int __fastcall MyIsNeedDrawUnit2(unsigned char *UnitAddr, int addr1)
 
 	if (IsNotBadUnit(UnitAddr))
 	{
-		// Если не враг
 		if (!IsEnemy(UnitAddr))
 		{
 			return 1;
@@ -1217,7 +1218,6 @@ void HookCooldown()
 	InitFreeType();
 	HookD3D8();
 
-	// g_AbilityVTable = (DWORD)g_gameDllBase + 0x88AC4C;
 	g_DrawSkillPanelOffset = (DWORD)g_gameDllBase + 0x277FE0;
 	g_DrawSkillPanelOverlayOffset = (DWORD)g_gameDllBase + 0x278090;
 	g_IsNeedDrawUnitOriginOffset = (DWORD)g_gameDllBase + 0x2868E0;
@@ -1281,11 +1281,11 @@ bool GetCommandButtonPos1024(CCommandButton *btn, float &x, float &y, float *out
 
 void __fastcall SetCdForAddr(DWORD pThis, int dummy)
 {
-	CCommandButton *dd = (CCommandButton *)pThis;
+	CCommandButton *cmdbt = (CCommandButton *)pThis;
 
-	if (dd && dd->commandButtonData)
+	if (cmdbt && cmdbt->commandButtonData)
 	{
-		CAbility *abi = dd->commandButtonData->ability;
+		CAbility *abi = cmdbt->commandButtonData->ability;
 		if (abi && ((abi->flag2 & 0x200) != 0 || (abi->flag2 & 0x400) != 0)) // if ( (abi->flag2 & 0x200) == 0 || (abi->flag2 & 0x400) != 0 )
 		{
 			unsigned char *pData = *(unsigned char **)((DWORD)abi + 0xDC);
@@ -1301,7 +1301,7 @@ void __fastcall SetCdForAddr(DWORD pThis, int dummy)
 					float y = 0.0f;
 					float btnH1024 = 0.0f;
 
-					if (GetCommandButtonPos1024(dd, x, y, &btnH1024))
+					if (GetCommandButtonPos1024(cmdbt, x, y, &btnH1024))
 					{
 						// 字体大小 = 按钮高度的 40%，限制在 [8, 48] 范围内
 						int fontSize = (int)(btnH1024 * 0.40f + 0.5f);
