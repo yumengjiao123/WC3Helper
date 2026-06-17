@@ -1286,7 +1286,8 @@ void __fastcall SetCdForAddr(DWORD pThis, int dummy)
 	if (cmdbt && cmdbt->commandButtonData)
 	{
 		CAbility *abi = cmdbt->commandButtonData->ability;
-		if (abi && ((abi->flag2 & 0x200) != 0 || (abi->flag2 & 0x400) != 0)) // if ( (abi->flag2 & 0x200) == 0 || (abi->flag2 & 0x400) != 0 )
+
+		if (abi && ((abi->flag2 & 0x200) != 0 && (abi->flag2 & 0x400) == 0))
 		{
 			unsigned char *pData = *(unsigned char **)((DWORD)abi + 0xDC);
 			if (pData)
@@ -1320,6 +1321,15 @@ void __fastcall SetCdForAddr(DWORD pThis, int dummy)
 					}
 				}
 			}
+		}
+		else
+		{
+			// auto addr = ((DWORD)g_gameDllBase + 0xAC52CC);
+			// auto v5 = *(float *)addr;
+			// spdlog::info("SetCdForAddr = {}", *(float *)addr);
+			// if (0.0 == v5){
+			// 	(pTargetFunc)((DWORD)g_gameDllBase + 0x337E70)(pThis, dummy)
+			// }
 		}
 	}
 	RealFunc(pThis, dummy);
