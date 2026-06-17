@@ -61,6 +61,7 @@ struct TextDrawItem
 	bool bAdj;
 	bool bCenter;
 	int fontSize; // 屏幕像素字体大小（1024x768 空间），0 表示使用默认值
+	std::chrono::steady_clock::time_point timestamp; // 入队时间，用于过期过滤
 };
 
 struct D3DStateBackup
@@ -141,8 +142,16 @@ void __fastcall SetCdForAddr(DWORD pThis, int dummy);
 
 static void DrawTextToScreen(float x, float y, const wchar_t *text, DWORD color, bool bAdj = true, bool bCenter = false, int fontSize = 0)
 {
+	// 窗口最小化时跳过入队，避免无意义堆积
+	if (hWnd && IsIconic(hWnd))
+		return;
+
+	// 上限保护：队列积压超过500条时直接清空（兜底）
+	if (g_textDrawQueue.size() > 500)
+		g_textDrawQueue.clear();
+
 	// 不再直接绘制，只加入缓存队列
-	g_textDrawQueue.push_back({x, y, color, text, bAdj, bCenter, fontSize});
+	g_textDrawQueue.push_back({x, y, color, text, bAdj, bCenter, fontSize, std::chrono::steady_clock::now()});
 }
 
 static void DrawTextToScreenReal(float x, float y, const wchar_t *text, DWORD color, bool bAdj, bool bCenter = false, int fontSize = 0)
@@ -278,6 +287,7 @@ HRESULT __fastcall MyEndScene(int GlobalWc3Data)
 	if (!pDevice || pDevice->TestCooperativeLevel() != D3D_OK)
 	{
 		spdlog::info("pDevice is Null");
+		g_textDrawQueue.clear();
 		return g_oEndScene(GlobalWc3Data);
 	}
 
@@ -299,10 +309,12 @@ HRESULT __fastcall MyEndScene(int GlobalWc3Data)
 	}
 
 	DrawSystemInfo();
-	// 绘制所有缓存的技能冷却文字
+	// 绘制所有缓存的技能冷却文字，只保留 1 秒内的数据
+	auto now = std::chrono::steady_clock::now();
 	for (const auto &item : g_textDrawQueue)
 	{
-		DrawTextToScreenReal(item.x, item.y, item.text.c_str(), item.color, item.bAdj, item.bCenter, item.fontSize);
+		if (std::chrono::duration_cast<std::chrono::milliseconds>(now - item.timestamp).count() < 1000)
+			DrawTextToScreenReal(item.x, item.y, item.text.c_str(), item.color, item.bAdj, item.bCenter, item.fontSize);
 	}
 	g_textDrawQueue.clear();
 	return pDevice->EndScene();
@@ -317,7 +329,6 @@ bool InitFreeType(int fontSize)
 
 	// 加载系统字体，路径自行替换（微软雅黑）
 	const char *fontPath = "C:/Windows/Fonts/msyhbd.ttc";
-	// 先判断字体文件存不存在，不存在尝试"C:/Windows/Fonts/msyhbd.ttf"
 	if (!std::filesystem::exists(fontPath))
 	{
 		fontPath = "C:/Windows/Fonts/msyhbd.ttf";
