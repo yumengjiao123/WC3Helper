@@ -89,7 +89,6 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 		CloseHandle(hThread);
 		break;
 	case DLL_PROCESS_DETACH:
-		// UnloadWFE();
 		TerminateThread(hThread, 0);
 		FreeFreeTypeRes();
 		break;

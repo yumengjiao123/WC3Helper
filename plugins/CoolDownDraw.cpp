@@ -51,19 +51,6 @@ struct CharGlyph
 	}
 };
 
-// 新增：文字绘制缓存结构体
-struct TextDrawItem
-{
-	float x;
-	float y;
-	DWORD color;
-	std::wstring text;
-	bool bAdj;
-	bool bCenter;
-	int fontSize;									 // 屏幕像素字体大小（1024x768 空间），0 表示使用默认值
-	std::chrono::steady_clock::time_point timestamp; // 入队时间，用于过期过滤
-};
-
 struct D3DStateBackup
 {
 	DWORD oldZWrite, oldZTest, oldBlend, oldAlphaBlendOp;
@@ -82,9 +69,7 @@ struct D3DStateBackup
 };
 
 //============= 全局变量 =============
-
-// 全局文字缓存，每帧清空重绘
-std::vector<TextDrawItem> g_textDrawQueue;
+std::vector<CCommandButton *> g_ButtonQueue;
 
 FT_Library g_ftLib = nullptr;
 FT_Face g_ftFace = nullptr;
@@ -131,27 +116,14 @@ HDC GlobalDc = NULL;
 
 HWND GetGameWindow();
 void DrawOverlayText(float x, float y, DWORD dwColor, const wchar_t *text, float scale = 1.0f, bool bCenter = false, int fontSize = 22);
-void DrawTextD3D8(float x, float y, DWORD color, const wchar_t *text, bool bCenter = false, int fontSize = 22);
+void DrawTextD3D8(float startX, float startY, DWORD color, const wchar_t *text, bool bCenter, int fontSize);
 bool InitFreeType(int fontSize = 22);
 void SaveD3DState(LPDIRECT3DDEVICE8 pDev, D3DStateBackup &outState);
 void RestoreD3DState(LPDIRECT3DDEVICE8 pDev, D3DStateBackup &state);
 void Setup2DOrtho(LPDIRECT3DDEVICE8 pDev);
+void DrawAbilityButtonInfo();
 
 void __fastcall SetCdForAddr(DWORD pThis, int dummy);
-
-static void DrawTextToScreen(float x, float y, const wchar_t *text, DWORD color, bool bAdj = true, bool bCenter = false, int fontSize = 0)
-{
-	// 窗口最小化时跳过入队，避免无意义堆积
-	if (hWnd && IsIconic(hWnd))
-		return;
-
-	// 上限保护：队列积压超过500条时直接清空（兜底）
-	if (g_textDrawQueue.size() > 60)
-		g_textDrawQueue.clear();
-
-	// 不再直接绘制，只加入缓存队列
-	g_textDrawQueue.push_back({x, y, color, text, bAdj, bCenter, fontSize, std::chrono::steady_clock::now()});
-}
 
 static void DrawTextToScreenReal(float x, float y, const wchar_t *text, DWORD color, bool bAdj, bool bCenter = false, int fontSize = 0)
 {
@@ -178,15 +150,15 @@ static void DrawTextToScreenReal(float x, float y, const wchar_t *text, DWORD co
 		{
 			GLint viewport[4];
 			glGetIntegerv(GL_VIEWPORT, viewport);
-			scaleX = viewport[2] / 1024.0f;
-			scaleY = viewport[3] / 768.0f;
+			scaleX = viewport[2] / 800.0f;
+			scaleY = viewport[3] / 600.0f;
 			rx *= scaleX;
 			ry *= scaleY;
 		}
 		else
 		{
-			scaleX = iWidth / 1024.0f;
-			scaleY = iHeight / 768.0f;
+			scaleX = iWidth / 800.0f;
+			scaleY = iHeight / 600.0f;
 			rx = x * scaleX;
 			ry = y * scaleY;
 		}
@@ -213,12 +185,10 @@ static void DrawTextToScreenReal(float x, float y, const wchar_t *text, DWORD co
 	}
 	else
 	{
-#if 1
+		if (D3D_OK != g_pDevice->TestCooperativeLevel())
+			return;
+
 		DrawTextD3D8(rx, ry, color, text, bCenter, realFontSize);
-#else
-		RECT rc = {(LONG)rx, (LONG)ry, 0, 0};
-		g_pFont->DrawText(text, -1, &rc, DT_NOCLIP, color);
-#endif
 	}
 }
 
@@ -253,11 +223,15 @@ void DrawSystemInfo()
 
 HRESULT STDMETHODCALLTYPE MyD3D8Reset(LPDIRECT3DDEVICE8 device, D3DPRESENT_PARAMETERS *parameters)
 {
-	if (!g_oD3dReset)
-	{
-		spdlog::info("FATAL ERROR IN MyD3DReset");
-		return 0;
-	}
+	if (!g_oD3dReset || !device)
+    {
+        return E_FAIL;
+    }
+
+    if (device->TestCooperativeLevel() == D3DERR_DEVICELOST)
+    {
+        return g_oD3dReset(device, parameters);
+    }
 
 	if (resetcalled)
 		return g_oD3dReset(device, parameters);
@@ -270,8 +244,8 @@ HRESULT STDMETHODCALLTYPE MyD3D8Reset(LPDIRECT3DDEVICE8 device, D3DPRESENT_PARAM
 		OLD_D3D_PARAMETERS_LOADED = true;
 	}
 
-	parameters->FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
-	parameters->FullScreen_RefreshRateInHz = D3DPRESENT_RATE_UNLIMITED;
+	// parameters->FullScreen_PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+	// parameters->FullScreen_RefreshRateInHz = D3DPRESENT_RATE_UNLIMITED;
 
 	hr = g_oD3dReset(device, parameters);
 	resetcalled = false;
@@ -286,13 +260,13 @@ HRESULT __fastcall MyEndScene(int GlobalWc3Data)
 	if (!pDevice || pDevice->TestCooperativeLevel() != D3D_OK)
 	{
 		spdlog::info("pDevice is Null");
-		g_textDrawQueue.clear();
 		return g_oEndScene(GlobalWc3Data);
 	}
 
-	if (!g_init && pDevice != NULL)
+	if (!g_init && g_pDevice == NULL && pDevice != NULL)
 	{
 		g_pDevice = pDevice;
+		//g_pDevice->AddRef();
 		g_init = true;
 		if (g_pDevice && !vsyncInitialized)
 		{
@@ -308,14 +282,7 @@ HRESULT __fastcall MyEndScene(int GlobalWc3Data)
 	}
 
 	DrawSystemInfo();
-	// 绘制所有缓存的技能冷却文字，只保留 1 秒内的数据
-	auto now = std::chrono::steady_clock::now();
-	for (const auto &item : g_textDrawQueue)
-	{
-		if (std::chrono::duration_cast<std::chrono::milliseconds>(now - item.timestamp).count() < 1000)
-			DrawTextToScreenReal(item.x, item.y, item.text.c_str(), item.color, item.bAdj, item.bCenter, item.fontSize);
-	}
-	g_textDrawQueue.clear();
+	DrawAbilityButtonInfo();
 	return pDevice->EndScene();
 }
 
@@ -344,28 +311,51 @@ bool InitFreeType(int fontSize)
 
 	// 纹理像素对齐（OpenGL灰度单通道）
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	// if(g_pDevice)
+	// 	g_pDevice->Release();
 	return true;
 }
 
 void FreeFreeTypeRes()
 {
+	// 先释放所有字符纹理，避免内存泄漏
 	for (auto &kv : g_charCache)
 	{
 		if (bIsOpenGL)
 		{
 			if (kv.second.tex.t1 != 0)
+			{
 				glDeleteTextures(1, &kv.second.tex.t1);
+				kv.second.tex.t1 = 0;
+			}
 		}
 		else
 		{
 			if (kv.second.tex.t2 != nullptr)
-				kv.second.tex.t2->Release();
+			{
+				try
+				{
+					kv.second.tex.t2->Release();
+				}
+				catch (...)
+				{
+				}
+				kv.second.tex.t2 = nullptr;
+			}
 		}
 	}
+	g_charCache.clear();
+
 	if (g_ftFace)
+	{
 		FT_Done_Face(g_ftFace);
+		g_ftFace = nullptr;
+	}
 	if (g_ftLib)
+	{
 		FT_Done_FreeType(g_ftLib);
+		g_ftLib = nullptr;
+	}
 }
 
 CharGlyph LoadGlyph(wchar_t ch, int fontSize)
@@ -571,38 +561,59 @@ void SaveD3DState(LPDIRECT3DDEVICE8 pDev, D3DStateBackup &outState)
 
 void RestoreD3DState(LPDIRECT3DDEVICE8 pDev, D3DStateBackup &state)
 {
-	pDev->SetRenderState(D3DRS_ZWRITEENABLE, state.oldZWrite);
-	pDev->SetRenderState(D3DRS_ZENABLE, state.oldZTest);
-	pDev->SetRenderState(D3DRS_ALPHABLENDENABLE, state.oldBlend);
-	pDev->SetRenderState(D3DRS_BLENDOP, state.oldAlphaBlendOp);
-	pDev->SetRenderState(D3DRS_SRCBLEND, state.oldSrcBlend);
-	pDev->SetRenderState(D3DRS_DESTBLEND, state.oldDestBlend);
-	pDev->SetRenderState(D3DRS_CULLMODE, state.oldCullMode);
-	pDev->SetRenderState(D3DRS_LIGHTING, state.oldLighting);
-	pDev->SetRenderState(D3DRS_ALPHATESTENABLE, state.oldAlphaTest);
-	pDev->SetRenderState(D3DRS_FOGENABLE, state.oldFog);
-	pDev->SetVertexShader(state.oldVertexShader);
-	pDev->SetTexture(0, state.oldTexture);
+	// 在 DLL_PROCESS_DETACH 时，设备可能已失效，需要保护
+	if (!pDev)
+		return;
 
-	// 恢复纹理阶段状态
-	pDev->SetTextureStageState(0, D3DTSS_COLOROP, state.oldColorOp);
-	pDev->SetTextureStageState(0, D3DTSS_COLORARG1, state.oldColorArg1);
-	pDev->SetTextureStageState(0, D3DTSS_COLORARG2, state.oldColorArg2);
-	pDev->SetTextureStageState(0, D3DTSS_ALPHAOP, state.oldAlphaOp);
-	pDev->SetTextureStageState(0, D3DTSS_ALPHAARG1, state.oldAlphaArg1);
-	pDev->SetTextureStageState(0, D3DTSS_ALPHAARG2, state.oldAlphaArg2);
-	pDev->SetTextureStageState(0, D3DTSS_MINFILTER, state.oldMinFilter);
-	pDev->SetTextureStageState(0, D3DTSS_MAGFILTER, state.oldMagFilter);
-	pDev->SetTextureStageState(0, D3DTSS_MIPFILTER, state.oldMipFilter);
-	pDev->SetTextureStageState(0, D3DTSS_ADDRESSU, state.oldAddressU);
-	pDev->SetTextureStageState(0, D3DTSS_ADDRESSV, state.oldAddressV);
+	try
+	{
+		pDev->SetRenderState(D3DRS_ZWRITEENABLE, state.oldZWrite);
+		pDev->SetRenderState(D3DRS_ZENABLE, state.oldZTest);
+		pDev->SetRenderState(D3DRS_ALPHABLENDENABLE, state.oldBlend);
+		pDev->SetRenderState(D3DRS_BLENDOP, state.oldAlphaBlendOp);
+		pDev->SetRenderState(D3DRS_SRCBLEND, state.oldSrcBlend);
+		pDev->SetRenderState(D3DRS_DESTBLEND, state.oldDestBlend);
+		pDev->SetRenderState(D3DRS_CULLMODE, state.oldCullMode);
+		pDev->SetRenderState(D3DRS_LIGHTING, state.oldLighting);
+		pDev->SetRenderState(D3DRS_ALPHATESTENABLE, state.oldAlphaTest);
+		pDev->SetRenderState(D3DRS_FOGENABLE, state.oldFog);
+		pDev->SetVertexShader(state.oldVertexShader);
+		pDev->SetTexture(0, state.oldTexture);
 
-	pDev->SetTransform(D3DTS_PROJECTION, &state.oldProj);
-	pDev->SetTransform(D3DTS_WORLD, &state.oldWorld);
+		// 恢复纹理阶段状态
+		pDev->SetTextureStageState(0, D3DTSS_COLOROP, state.oldColorOp);
+		pDev->SetTextureStageState(0, D3DTSS_COLORARG1, state.oldColorArg1);
+		pDev->SetTextureStageState(0, D3DTSS_COLORARG2, state.oldColorArg2);
+		pDev->SetTextureStageState(0, D3DTSS_ALPHAOP, state.oldAlphaOp);
+		pDev->SetTextureStageState(0, D3DTSS_ALPHAARG1, state.oldAlphaArg1);
+		pDev->SetTextureStageState(0, D3DTSS_ALPHAARG2, state.oldAlphaArg2);
+		pDev->SetTextureStageState(0, D3DTSS_MINFILTER, state.oldMinFilter);
+		pDev->SetTextureStageState(0, D3DTSS_MAGFILTER, state.oldMagFilter);
+		pDev->SetTextureStageState(0, D3DTSS_MIPFILTER, state.oldMipFilter);
+		pDev->SetTextureStageState(0, D3DTSS_ADDRESSU, state.oldAddressU);
+		pDev->SetTextureStageState(0, D3DTSS_ADDRESSV, state.oldAddressV);
+
+		pDev->SetTransform(D3DTS_PROJECTION, &state.oldProj);
+		pDev->SetTransform(D3DTS_WORLD, &state.oldWorld);
+	}
+	catch (...)
+	{
+		// 忽略异常，避免在设备销毁时崩溃
+	}
 
 	// 释放保存的纹理引用
 	if (state.oldTexture)
-		state.oldTexture->Release();
+	{
+		try
+		{
+			state.oldTexture->Release();
+		}
+		catch (...)
+		{
+			// 忽略异常
+		}
+		state.oldTexture = nullptr;
+	}
 }
 
 struct TextVertex
@@ -675,6 +686,9 @@ void DrawTextD3D8(float startX, float startY, DWORD color, const wchar_t *text, 
 	{
 		return;
 	}
+
+	if(D3D_OK != g_pDevice->TestCooperativeLevel())
+		return;
 
 	D3DStateBackup state;
 	SaveD3DState(g_pDevice, state);
@@ -955,8 +969,8 @@ void DrawOverlayText(float x, float y, DWORD dwColor, const wchar_t *text, float
 		curX += glyph.advance;
 		text++;
 	}
-	glPopMatrix();
 
+	glPopMatrix();
 	RestoreOpenGLState();
 	glPopAttrib();
 
@@ -969,7 +983,6 @@ int __stdcall MyWglSwapLayerBuffers(HDC dc, unsigned int b)
 {
 	if (!dc)
 	{
-		g_textDrawQueue.clear();
 		return g_oWglSwapLayerBuffers(dc, b);
 	}
 
@@ -988,15 +1001,7 @@ int __stdcall MyWglSwapLayerBuffers(HDC dc, unsigned int b)
 	if (b & WGL_SWAP_MAIN_PLANE)
 	{
 		DrawSystemInfo();
-
-		auto now = std::chrono::steady_clock::now();
-		for (const auto &item : g_textDrawQueue)
-		{
-			if (std::chrono::duration_cast<std::chrono::milliseconds>(now - item.timestamp).count() < 1000)
-				DrawTextToScreenReal(item.x, item.y, item.text.c_str(), item.color, item.bAdj, item.bCenter, item.fontSize);
-		}
-
-		g_textDrawQueue.clear();
+		DrawAbilityButtonInfo();
 		g_oWglSwapLayerBuffers(dc, WGL_SWAP_OVERLAY1);
 	}
 
@@ -1185,7 +1190,7 @@ int __fastcall MyIsDrawSkillPanelOverlay(unsigned char *UnitAddr, int addr1)
 	return result;
 }
 
-int __fastcall MyIsNeedDrawUnit2(unsigned char *UnitAddr, int addr1)
+int __fastcall MyIsNeedDrawUnit2(unsigned char *UnitAddr, int)
 {
 	using IsNeedDrawUnit2 = int(__thiscall *)(unsigned char *UnitAddr);
 
@@ -1282,55 +1287,64 @@ bool GetCommandButtonPos1024(CCommandButton *btn, float &x, float &y, float *out
 void __fastcall SetCdForAddr(DWORD pThis, int dummy)
 {
 	CCommandButton *cmdbt = (CCommandButton *)pThis;
-
-	if (cmdbt && cmdbt->commandButtonData)
+	if (g_ButtonQueue.size() >= 18)
 	{
-		CAbility *abi = cmdbt->commandButtonData->ability;
+		RealFunc(pThis, dummy);
+		return;
+	}
 
-		if (abi && ((abi->flag2 & 0x200) != 0 && (abi->flag2 & 0x400) == 0))
+	if (cmdbt)
+	{
+		if (std::find(g_ButtonQueue.begin(), g_ButtonQueue.end(), cmdbt) == g_ButtonQueue.end())
 		{
-			unsigned char *pData = *(unsigned char **)((DWORD)abi + 0xDC);
-			if (pData)
+			g_ButtonQueue.push_back(cmdbt);
+		}
+	}
+	RealFunc(pThis, dummy);
+}
+
+void DrawAbilityButtonInfo()
+{
+	for (auto cmdbt : g_ButtonQueue)
+	{
+		if (cmdbt && cmdbt->commandButtonData)
+		{
+			CAbility *abi = cmdbt->commandButtonData->ability;
+			if (abi && ((abi->flag2 & 0x200) != 0 && (abi->flag2 & 0x400) == 0))
 			{
-				float val1 = *(float *)(pData + 0x4);
-				int pData2 = *(int *)(pData + 0xC);
-				if (pData2 > 0)
+				unsigned char *pData = *(unsigned char **)((DWORD)abi + 0xDC);
+				if (pData)
 				{
-					float val2 = *(float *)(pData2 + 0x40);
-					float val3 = val1 - val2;
-					float x = 0.0f;
-					float y = 0.0f;
-					float btnH1024 = 0.0f;
-
-					if (GetCommandButtonPos1024(cmdbt, x, y, &btnH1024))
+					float val1 = *(float *)(pData + 0x4);
+					int pData2 = *(int *)(pData + 0xC);
+					if (pData2 > 0)
 					{
-						// 字体大小 = 按钮高度的 40%，限制在 [8, 48] 范围内
-						int fontSize = (int)(btnH1024 * 0.40f + 0.5f);
-						if (fontSize < 8)
-							fontSize = 8;
-						if (fontSize > 48)
-							fontSize = 48;
+						float val2 = *(float *)(pData2 + 0x40);
+						float val3 = val1 - val2;
+						float x = 0.0f;
+						float y = 0.0f;
+						float btnH1024 = 0.0f;
 
-						std::wstring text = std::format(L"{:3.0f}", std::trunc(val3));
-						if (val3 < 1.00f)
+						if (GetCommandButtonPos1024(cmdbt, x, y, &btnH1024))
 						{
-							text = std::format(L"{:3.2f}", val3);
+							// 字体大小 = 按钮高度的 40%，限制在 [8, 48] 范围内
+							int fontSize = (int)(btnH1024 * 0.40f + 0.5f);
+							if (fontSize < 8)
+								fontSize = 8;
+							if (fontSize > 48)
+								fontSize = 48;
+
+							std::wstring text = std::format(L"{:3.0f}", std::trunc(val3));
+							if (val3 < 1.00f)
+							{
+								text = std::format(L"{:3.2f}", val3);
+							}
+							paddingStringtoLength(text, 4);
+							DrawTextToScreenReal(x, y, text.c_str(), 0xFFE0E0E0, true, true, fontSize);
 						}
-						paddingStringtoLength(text, 4);
-						DrawTextToScreen(x, y, text.c_str(), 0xFFE0E0E0, true, true, fontSize);
 					}
 				}
 			}
 		}
-		else
-		{
-			// auto addr = ((DWORD)g_gameDllBase + 0xAC52CC);
-			// auto v5 = *(float *)addr;
-			// spdlog::info("SetCdForAddr = {}", *(float *)addr);
-			// if (0.0 == v5){
-			// 	(pTargetFunc)((DWORD)g_gameDllBase + 0x337E70)(pThis, dummy)
-			// }
-		}
 	}
-	RealFunc(pThis, dummy);
 }
