@@ -150,15 +150,15 @@ static void DrawTextToScreenReal(float x, float y, const wchar_t *text, DWORD co
 		{
 			GLint viewport[4];
 			glGetIntegerv(GL_VIEWPORT, viewport);
-			scaleX = viewport[2] / 800.0f;
-			scaleY = viewport[3] / 600.0f;
+			scaleX = viewport[2] / 1024.0f;
+			scaleY = viewport[3] / 768.0f;
 			rx *= scaleX;
 			ry *= scaleY;
 		}
 		else
 		{
-			scaleX = iWidth / 800.0f;
-			scaleY = iHeight / 600.0f;
+			scaleX = iWidth / 1024.0f;
+			scaleY = iHeight / 768.0f;
 			rx = x * scaleX;
 			ry = y * scaleY;
 		}
@@ -224,14 +224,14 @@ void DrawSystemInfo()
 HRESULT STDMETHODCALLTYPE MyD3D8Reset(LPDIRECT3DDEVICE8 device, D3DPRESENT_PARAMETERS *parameters)
 {
 	if (!g_oD3dReset || !device)
-    {
-        return E_FAIL;
-    }
+	{
+		return E_FAIL;
+	}
 
-    if (device->TestCooperativeLevel() == D3DERR_DEVICELOST)
-    {
-        return g_oD3dReset(device, parameters);
-    }
+	if (device->TestCooperativeLevel() == D3DERR_DEVICELOST)
+	{
+		return g_oD3dReset(device, parameters);
+	}
 
 	if (resetcalled)
 		return g_oD3dReset(device, parameters);
@@ -266,7 +266,7 @@ HRESULT __fastcall MyEndScene(int GlobalWc3Data)
 	if (!g_init && g_pDevice == NULL && pDevice != NULL)
 	{
 		g_pDevice = pDevice;
-		//g_pDevice->AddRef();
+		// g_pDevice->AddRef();
 		g_init = true;
 		if (g_pDevice && !vsyncInitialized)
 		{
@@ -309,8 +309,9 @@ bool InitFreeType(int fontSize)
 	// 设置像素字号
 	FT_Set_Pixel_Sizes(g_ftFace, 0, fontSize);
 
-	// 纹理像素对齐（OpenGL灰度单通道）
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	// // 纹理像素对齐（OpenGL灰度单通道）
+	// glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
 	// if(g_pDevice)
 	// 	g_pDevice->Release();
 	return true;
@@ -391,10 +392,14 @@ CharGlyph LoadGlyph(wchar_t ch, int fontSize)
 		return glyph;
 	}
 
+	GLint oldAlign;
+	// 1. 保存游戏原有对齐状态
+	glGetIntegerv(GL_UNPACK_ALIGNMENT, &oldAlign);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
 	GLuint tex;
 	glGenTextures(1, &tex);
 	glBindTexture(GL_TEXTURE_2D, tex);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
 	auto nextPow2 = [](int n)
 	{
@@ -429,6 +434,10 @@ CharGlyph LoadGlyph(wchar_t ch, int fontSize)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // GL_NEAREST
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	// 3. 关键：恢复原来的对齐，不影响War3原生贴图加载
+	glPixelStorei(GL_UNPACK_ALIGNMENT, oldAlign);
 
 	glyph.tex.t1 = tex;
 	glyph.uMax = (float)w / texW;
@@ -687,7 +696,7 @@ void DrawTextD3D8(float startX, float startY, DWORD color, const wchar_t *text, 
 		return;
 	}
 
-	if(D3D_OK != g_pDevice->TestCooperativeLevel())
+	if (D3D_OK != g_pDevice->TestCooperativeLevel())
 		return;
 
 	D3DStateBackup state;
@@ -1222,7 +1231,7 @@ void HookCooldown()
 {
 	InitFreeType();
 	HookD3D8();
-
+	// #ifndef WC3HELPER_BASIC
 	g_DrawSkillPanelOffset = (DWORD)g_gameDllBase + 0x277FE0;
 	g_DrawSkillPanelOverlayOffset = (DWORD)g_gameDllBase + 0x278090;
 	g_IsNeedDrawUnitOriginOffset = (DWORD)g_gameDllBase + 0x2868E0;
@@ -1235,7 +1244,7 @@ void HookCooldown()
 
 	DWORD IsNeedDrawUnit2Offset = (DWORD)g_gameDllBase + 0x28ECF0;
 	FunHook((void *)IsNeedDrawUnit2Offset, (void *)MyIsNeedDrawUnit2, (void *&)g_oIsNeedDrawUnit2);
-
+	// #endif
 	DWORD pPreSetCooldown = (DWORD)g_gameDllBase;
 	pPreSetCooldown += 0x3502A0; // sub_6F35F170也可以
 	FunHook((void *)pPreSetCooldown, (void *)SetCdForAddr, (void *&)RealFunc);

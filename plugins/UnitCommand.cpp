@@ -332,6 +332,7 @@ void UnitCommandON()
 
 bool GetLocalHero(std::string &name)
 {
+#ifndef WC3HELPER_BASIC
 	if (LocalHero != 0)
 	{
 		return false;
@@ -360,5 +361,6 @@ bool GetLocalHero(std::string &name)
 		}
 	}
 
+#endif
 	return false;
 }

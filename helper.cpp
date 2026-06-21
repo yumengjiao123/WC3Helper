@@ -108,7 +108,7 @@ void ReadConfig()
 
 	strcat(szIniPath, "\\helper.ini");
 	g_WideScreen = (GetPrivateProfileIntA("Helper", "WideScreen", 1, szIniPath) != 0);
-	//g_DelayReducer = (GetPrivateProfileIntA("Helper", "NoDelay", 1, szIniPath) != 0);
+	// g_DelayReducer = (GetPrivateProfileIntA("Helper", "NoDelay", 1, szIniPath) != 0);
 }
 
 void DoInit()
@@ -130,13 +130,13 @@ void DoInit()
 
 	initJASS();
 	spdlog::info("JASS Env loaded");
-
+#ifndef WC3HELPER_BASIC
 	HookChatMessage();
 	spdlog::info("ChatMessage hooked");
 
 	UnitCommandON();
-	spdlog::info("UnitCommand loaded");
-
+	spdlog::info("UnitCommand hooked");
+#endif
 	HookCooldown();
 	spdlog::info("Cooldown hooked");
 
@@ -226,7 +226,7 @@ void DelayReducer2(LPVOID dwGameDll)
 		delayNew1 = std::min<DWORD>(delayNew1, g_DelayOld1);
 		WriteBytes((void *)((DWORD)dwGameDll + 0x6616A1), (LPBYTE)&delayNew1, 4);
 
-		g_DelayOld2 = *(DWORD *)((DWORD)dwGameDll + 0x662231);	
+		g_DelayOld2 = *(DWORD *)((DWORD)dwGameDll + 0x662231);
 		spdlog::info("DelayOld2: {}", g_DelayOld2);
 		delayNew2 = std::min<DWORD>(delayNew2, g_DelayOld2);
 		WriteBytes((void *)((DWORD)dwGameDll + 0x662231), (LPBYTE)&delayNew2, 4);
@@ -466,14 +466,17 @@ void WINAPI HotKeys()
 				TextPrint("|CFFFCD211 DMF|R 大米饭显蓝消延迟改名插件帮助.\n"
 						  "     |CFFFF0000F5|R              : Enable / Disable ShowManaBar (Enabled by default)\n"
 						  "     |CFFFF0000F6|R              : Enable / Disable Lag Reducer\n"
+#ifndef WC3HELPER_BASIC
 						  "     |CFFFF0000F7|R              : Enable / Disable Auto cast skill\n"
 						  "     |CFFFF0000F8|R              : Enable / Disable Ally ultimate cooldown alert\n"
+						  //   "     |CFFFF0000-cpn XXX |R       : Rename to XXX\n"
+						  "     |CFFFF0000-mute X |R        : Mute x(x is player index)\n"
+#endif
 						  "     |CFFFF0000 Home/End|R       : ZoomIn/ZoomOut\n"
-						//   "     |CFFFF0000-cpn XXX |R       : Rename to XXX\n"
-						  "     |CFFFF0000-mute X |R        : Mute x(x is player index)\n",
-						  //"     |CFFFF0000BackSpace|R : Clear Screen",
+						  //"     |CFFFF0000BackSpace|R : Clear Screen"
+						  ,
 						  10.0f);
-				TextPrint("|CFFFCD211 DMF|R 注意:重选或者交换英雄后请再输入一次-repick.\n",10.0f);
+				TextPrint("|CFFFCD211 DMF|R 注意:重选或者交换英雄后请再输入一次-repick.\n", 10.0f);
 				g_IsPlayerObserver = MyIsPlayerObserver(MyGetLocalPlayer());
 				bIsShown = true;
 				DelayReducer2(g_gameDllBase);
@@ -494,14 +497,14 @@ void WINAPI HotKeys()
 				while (HotKeyPressed(VK_DelayReducer))
 					Sleep(100);
 			}
-
+#ifndef WC3HELPER_BASIC
 			if (HotKeyPressed(VK_AutoSpellSkill))
 			{
 				AutoSpellSkill();
 				while (HotKeyPressed(VK_AutoSpellSkill))
 					Sleep(100);
 			}
-
+#endif
 			if (HotKeyPressed(VK_ZoomIn))
 			{
 				if (g_camdistance >= 1700.00f)
