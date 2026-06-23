@@ -5,18 +5,20 @@
 #include <iostream>
 #include <process.h>
 
-void FunHook(void* pOldFuncAddr, void* pNewFuncAddr, void*& pCallBackFuncAddr);
-void UnFunHook(void* pOldFuncAddr, void* pNewFuncAddr);
+void FunHook(void *pOldFuncAddr, void *pNewFuncAddr, void *&pCallBackFuncAddr);
+void UnFunHook(void *pOldFuncAddr, void *pNewFuncAddr);
 
+using PFN_CreateMatrixPerspectiveFov = void(__fastcall *)(float *, DWORD, float, float, float, float);
+PFN_CreateMatrixPerspectiveFov p_orgCreateMatrixPerspectiveFov = nullptr;
 HWND hWnd = NULL;
 
-void(__fastcall* p_orgCreateMatrixPerspectiveFov) (float*, DWORD, float, float, float, float) = 0;
-void __fastcall CreateMatrixPerspectiveFov(float* outMatrix, DWORD edx, float fovY, float aspectRatio, float nearZ, float farZ)
+void __fastcall CreateMatrixPerspectiveFov(float *outMatrix, DWORD edx, float fovY, float aspectRatio, float nearZ, float farZ)
 {
 	RECT r;
 	float fWideScreenMul = 1.0f;
 	auto hwnd = GetGameWindow();
-	if (!hwnd) {
+	if (!hwnd)
+	{
 		return;
 	}
 
@@ -48,32 +50,46 @@ void __fastcall CreateMatrixPerspectiveFov(float* outMatrix, DWORD edx, float fo
 	outMatrix[15] = 0.0f;
 }
 
-void UpdateWideScreen(LPVOID gameDllBase) {
+void UpdateWideScreen(LPVOID gameDllBase)
+{
 	DWORD offset = (DWORD)gameDllBase;
 
-	unsigned char p124e[] = { 0x8B, 0x50, 0x3C, 0x3B };
-	unsigned char p126a[] = { 0x7c, 0x73, 0x63, 0x6f };
+	unsigned char p124e[] = {0x8B, 0x50, 0x3C, 0x3B};
+	unsigned char p126a[] = {0x7c, 0x73, 0x63, 0x6f};
 
 	LPVOID veraddr = NULL;
-	*(int*)&veraddr = (DWORD)offset + 0x636F5D;
+	*(int *)&veraddr = (DWORD)offset + 0x636F5D;
 
-	if (0 == memcmp(p124e, (unsigned char*)veraddr, sizeof(p124e)))
+	if (0 == memcmp(p124e, (unsigned char *)veraddr, sizeof(p124e)))
 	{
 		offset += 0x7B6E90;
 	}
-	else if (0 == memcmp(p126a, (unsigned char*)veraddr, sizeof(p126a)))
+	else if (0 == memcmp(p126a, (unsigned char *)veraddr, sizeof(p126a)))
 	{
 		offset += 0x7B66F0;
 	}
-	else 
+	else
 	{
 		return;
 	}
 
-	FunHook((void*)offset, (void*)CreateMatrixPerspectiveFov, (void*&)p_orgCreateMatrixPerspectiveFov);
+	FunHook((void *)offset, (void *)CreateMatrixPerspectiveFov, (void *&)p_orgCreateMatrixPerspectiveFov);
 }
 
-void FunHook(void* pOldFuncAddr, void* pNewFuncAddr, void*& pCallBackFuncAddr)
+void ResetD3D() 
+{
+	// 强制游戏重新加载d3d
+	auto hwnd = GetGameWindow();
+	if (!hwnd)
+	{
+		return;
+	}
+
+	ShowWindow(hwnd, SW_MINIMIZE);
+	ShowWindow(hwnd, SW_SHOWNORMAL);
+}
+
+void FunHook(void *pOldFuncAddr, void *pNewFuncAddr, void *&pCallBackFuncAddr)
 {
 	if (!pOldFuncAddr)
 	{
@@ -82,12 +98,12 @@ void FunHook(void* pOldFuncAddr, void* pNewFuncAddr, void*& pCallBackFuncAddr)
 
 	DetourTransactionBegin();
 	DetourUpdateThread(GetCurrentThread());
-	DetourAttach(&(void*&)pOldFuncAddr, pNewFuncAddr);
+	DetourAttach(&(void *&)pOldFuncAddr, pNewFuncAddr);
 	DetourTransactionCommit();
 	pCallBackFuncAddr = pOldFuncAddr;
 }
 
-void UnFunHook(void* pOldFuncAddr, void* pNewFuncAddr)
+void UnFunHook(void *pOldFuncAddr, void *pNewFuncAddr)
 {
 	if (!pOldFuncAddr)
 	{
@@ -96,17 +112,17 @@ void UnFunHook(void* pOldFuncAddr, void* pNewFuncAddr)
 
 	DetourTransactionBegin();
 	DetourUpdateThread(GetCurrentThread());
-	DetourDetach(&(void*&)pOldFuncAddr, pNewFuncAddr);
+	DetourDetach(&(void *&)pOldFuncAddr, pNewFuncAddr);
 	DetourTransactionCommit();
 }
 
 static HWND findTopWindow(DWORD pid)
 {
-	std::pair<HWND, DWORD> params = { 0, pid };
+	std::pair<HWND, DWORD> params = {0, pid};
 
 	// Enumerate the windows using a lambda to process each window
 	BOOL bResult = EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL
-		{
+							   {
 			auto pParams = (std::pair<HWND, DWORD>*)(lParam);
 
 			DWORD processId;
@@ -121,8 +137,7 @@ static HWND findTopWindow(DWORD pid)
 			}
 
 			// Continue enumerating
-			return TRUE;
-		}, (LPARAM)&params);
+			return TRUE; }, (LPARAM)&params);
 
 	if (!bResult && GetLastError() == -1 && params.first)
 	{

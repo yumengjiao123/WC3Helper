@@ -73,7 +73,7 @@ LPVOID getPlayer(int playerIndex);
 LPVOID getLocalPlayer();
 int GetPlayerId(LPVOID hPlayer);
 
-void FreeFreeTypeRes();
+void UnHookCooldown();
 BOOL APIENTRY DllMain(HMODULE hModule,
 					  DWORD ul_reason_for_call,
 					  LPVOID lpReserved)
@@ -89,8 +89,8 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 		CloseHandle(hThread);
 		break;
 	case DLL_PROCESS_DETACH:
+		UnHookCooldown();
 		TerminateThread(hThread, 0);
-		FreeFreeTypeRes();
 		break;
 	}
 	return TRUE;
@@ -476,7 +476,9 @@ void WINAPI HotKeys()
 						  //"     |CFFFF0000BackSpace|R : Clear Screen"
 						  ,
 						  10.0f);
+#ifndef WC3HELPER_BASIC
 				TextPrint("|CFFFCD211 DMF|R 注意:重选或者交换英雄后请再输入一次-repick.\n", 10.0f);
+#endif
 				g_IsPlayerObserver = MyIsPlayerObserver(MyGetLocalPlayer());
 				bIsShown = true;
 				DelayReducer2(g_gameDllBase);

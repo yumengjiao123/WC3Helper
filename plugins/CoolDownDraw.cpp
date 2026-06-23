@@ -82,6 +82,7 @@ bool DirectxHookInitialized = false;
 bool vsyncInitialized = false;
 bool resetcalled = false;
 bool OLD_D3D_PARAMETERS_LOADED = false;
+bool g_hookCoolDown = false;
 
 void FunHook(void *pOldFuncAddr, void *pNewFuncAddr, void *&pCallBackFuncAddr);
 void UnFunHook(void *pOldFuncAddr, void *pNewFuncAddr);
@@ -93,7 +94,7 @@ using Present = HRESULT(__stdcall *)(LPDIRECT3DDEVICE8, CONST RECT *, CONST RECT
 using IsNeedDrawUnitOrigin = int(__thiscall *)(void *);
 
 using pTargetFunc = void(__fastcall *)(DWORD pThis, int dummy);
-pTargetFunc RealFunc = nullptr;
+pTargetFunc g_oRealFunc = nullptr;
 
 D3DReset g_oD3dReset = nullptr;
 EndScene g_oEndScene = nullptr;
@@ -124,6 +125,8 @@ void Setup2DOrtho(LPDIRECT3DDEVICE8 pDev);
 void DrawAbilityButtonInfo();
 
 void __fastcall SetCdForAddr(DWORD pThis, int dummy);
+
+void UnHookCooldown();
 
 static void DrawTextToScreenReal(float x, float y, const wchar_t *text, DWORD color, bool bAdj, bool bCenter = false, int fontSize = 0)
 {
@@ -309,11 +312,6 @@ bool InitFreeType(int fontSize)
 	// 设置像素字号
 	FT_Set_Pixel_Sizes(g_ftFace, 0, fontSize);
 
-	// // 纹理像素对齐（OpenGL灰度单通道）
-	// glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-	// if(g_pDevice)
-	// 	g_pDevice->Release();
 	return true;
 }
 
@@ -898,7 +896,6 @@ void DrawOverlayText(float x, float y, DWORD dwColor, const wchar_t *text, float
 	const float offsets[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
 	for (auto &off : offsets)
 	{
-		// 0xFF5D3D25
 		glColor4f(0.36f, 0.24f, 0.145f, a);
 		float ox = x + off[0] / scale;
 		float oy = y + off[1] / scale;
@@ -1045,6 +1042,11 @@ void HookOpenGL()
 	}
 }
 
+void UnHookOpenGL()
+{
+	UnFunHook((void *)g_oWglSwapLayerBuffers, (void *)MyWglSwapLayerBuffers);
+}
+
 void HookD3D8()
 {
 	bIsOpenGL = CheckWar3RenderMode();
@@ -1061,6 +1063,25 @@ void HookD3D8()
 			DWORD EndScene_org = (DWORD)g_gameDllBase;
 			EndScene_org += 0x52FD70;
 			FunHook((void *)EndScene_org, (void *)MyEndScene, (void *&)g_oEndScene);
+		}
+	}
+}
+
+void UnHookD3D8()
+{
+	if (bIsOpenGL)
+	{
+		UnHookOpenGL();
+	}
+	else
+	{
+		if (DirectxHookInitialized)
+		{
+			//spdlog::info("UnHookD3D8");
+			DirectxHookInitialized = false;
+			UnFunHook((void *)g_oD3dReset, (void *)MyD3D8Reset);
+			//spdlog::info("D3D RESET UnHOOKED");
+			UnFunHook((void *)g_oEndScene, (void *)MyEndScene);
 		}
 	}
 }
@@ -1231,7 +1252,7 @@ void HookCooldown()
 {
 	InitFreeType();
 	HookD3D8();
-	// #ifndef WC3HELPER_BASIC
+#ifndef WC3HELPER_BASIC
 	g_DrawSkillPanelOffset = (DWORD)g_gameDllBase + 0x277FE0;
 	g_DrawSkillPanelOverlayOffset = (DWORD)g_gameDllBase + 0x278090;
 	g_IsNeedDrawUnitOriginOffset = (DWORD)g_gameDllBase + 0x2868E0;
@@ -1244,10 +1265,30 @@ void HookCooldown()
 
 	DWORD IsNeedDrawUnit2Offset = (DWORD)g_gameDllBase + 0x28ECF0;
 	FunHook((void *)IsNeedDrawUnit2Offset, (void *)MyIsNeedDrawUnit2, (void *&)g_oIsNeedDrawUnit2);
-	// #endif
+#endif
 	DWORD pPreSetCooldown = (DWORD)g_gameDllBase;
 	pPreSetCooldown += 0x3502A0; // sub_6F35F170也可以
-	FunHook((void *)pPreSetCooldown, (void *)SetCdForAddr, (void *&)RealFunc);
+	FunHook((void *)pPreSetCooldown, (void *)SetCdForAddr, (void *&)g_oRealFunc);
+	g_hookCoolDown = true;
+	atexit(UnHookCooldown);
+}
+
+void UnHookCooldown()
+{
+	if(!g_hookCoolDown){
+		return;
+	}
+
+	g_hookCoolDown = false;
+	UnHookD3D8();
+#ifndef WC3HELPER_BASIC
+	UnFunHook((void *)g_oIsDrawSkillPanel, (void *)MyIsDrawSkillPanel);
+	UnFunHook((void *)g_oIsDrawSkillPanelOverlay, (void *)MyIsDrawSkillPanelOverlay);
+	UnFunHook((void *)g_oIsNeedDrawUnit2, (void *)MyIsNeedDrawUnit2);
+#endif
+	UnFunHook((void *)g_oRealFunc, (void *)SetCdForAddr);
+	FreeFreeTypeRes();
+	g_ButtonQueue.clear();
 }
 
 void paddingStringtoLength(std::wstring &str, int len)
@@ -1298,7 +1339,7 @@ void __fastcall SetCdForAddr(DWORD pThis, int dummy)
 	CCommandButton *cmdbt = (CCommandButton *)pThis;
 	if (g_ButtonQueue.size() >= 18)
 	{
-		RealFunc(pThis, dummy);
+		g_oRealFunc(pThis, dummy);
 		return;
 	}
 
@@ -1308,8 +1349,30 @@ void __fastcall SetCdForAddr(DWORD pThis, int dummy)
 		{
 			g_ButtonQueue.push_back(cmdbt);
 		}
+
+		// if (cmdbt->commandButtonData)
+		// {
+		// 	DWORD abi = (DWORD)cmdbt->commandButtonData->ability;
+		// 	if (abi && (*(DWORD*)(abi+0x20) & 0x600) == 0x200)
+		// 	{
+		// 	}
+		// 	else
+		// 	{
+		// 		float *fret = *(float **)abi;
+		// 		float v20 = 0.0f;
+		// 		if (fret)
+		// 		{
+		// 			fret = (float *)((DWORD *)fret)[183];
+		// 			if (fret)
+		// 			{
+		// 				fret = (float *)((int(__stdcall *)(float *, DWORD))fret)(&v20, cmdbt->commandButtonData->orderId_8);
+		// 				spdlog::info("v20 = {}", v20);
+		// 			}
+		// 		}
+		// 	}
+		// }
 	}
-	RealFunc(pThis, dummy);
+	g_oRealFunc(pThis, dummy);
 }
 
 void DrawAbilityButtonInfo()
