@@ -9,7 +9,6 @@ typedef void *POINTER_64 PVOID64;
 #include <unordered_map>
 #include <chrono>
 #include "jass.h"
-
 #include <d3dx8.h>
 
 #define GL_GLEXT_PROTOTYPES
