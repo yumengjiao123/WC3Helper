@@ -1076,10 +1076,10 @@ void UnHookD3D8()
 	{
 		if (DirectxHookInitialized)
 		{
-			//spdlog::info("UnHookD3D8");
+			// spdlog::info("UnHookD3D8");
 			DirectxHookInitialized = false;
 			UnFunHook((void *)g_oD3dReset, (void *)MyD3D8Reset);
-			//spdlog::info("D3D RESET UnHOOKED");
+			// spdlog::info("D3D RESET UnHOOKED");
 			UnFunHook((void *)g_oEndScene, (void *)MyEndScene);
 		}
 	}
@@ -1274,7 +1274,8 @@ void HookCooldown()
 
 void UnHookCooldown()
 {
-	if(!g_hookCoolDown){
+	if (!g_hookCoolDown)
+	{
 		return;
 	}
 
@@ -1336,7 +1337,7 @@ bool GetCommandButtonPos1024(CCommandButton *btn, float &x, float &y, float *out
 void __fastcall SetCdForAddr(DWORD pThis, int dummy)
 {
 	CCommandButton *cmdbt = (CCommandButton *)pThis;
-	if (g_ButtonQueue.size() >= 18)
+	if (g_ButtonQueue.size() >= 18) // 18 个按钮, 12个技能 + 6个物品栏按钮
 	{
 		g_oRealFunc(pThis, dummy);
 		return;
@@ -1352,20 +1353,21 @@ void __fastcall SetCdForAddr(DWORD pThis, int dummy)
 		// if (cmdbt->commandButtonData)
 		// {
 		// 	DWORD abi = (DWORD)cmdbt->commandButtonData->ability;
-		// 	if (abi && (*(DWORD*)(abi+0x20) & 0x600) == 0x200)
+		// 	if (abi && (*(DWORD *)(abi + 0x20) & 0x600) == 0x200)
 		// 	{
 		// 	}
 		// 	else
 		// 	{
-		// 		float *fret = *(float **)abi;
-		// 		float v20 = 0.0f;
-		// 		if (fret)
+		// 		unsigned char *pData = *(unsigned char **)((DWORD)abi + 0x324);
+		// 		if (pData)
 		// 		{
-		// 			fret = (float *)((DWORD *)fret)[183];
-		// 			if (fret)
+		// 			float val1 = *(float *)(pData + 0x4);
+		// 			int pData2 = *(int *)(pData + 0xC);
+		// 			if (pData2 > 0)
 		// 			{
-		// 				fret = (float *)((int(__stdcall *)(float *, DWORD))fret)(&v20, cmdbt->commandButtonData->orderId_8);
-		// 				spdlog::info("v20 = {}", v20);
+		// 				float val2 = *(float *)(pData2 + 0x40);
+		// 				float val3 = val1 - val2;
+		// 				spdlog::info("val3 = {:3.2f}", val3);
 		// 			}
 		// 		}
 		// 	}
@@ -1381,38 +1383,80 @@ void DrawAbilityButtonInfo()
 		if (cmdbt && cmdbt->commandButtonData)
 		{
 			CAbility *abi = cmdbt->commandButtonData->ability;
-			if (abi && ((abi->flag2 & 0x200) != 0 && (abi->flag2 & 0x400) == 0))
+			unsigned char *pData = nullptr;
+			// if (abi && ((abi->flag2 & 0x200) != 0 && (abi->flag2 & 0x400) == 0))
+			if (!abi)
 			{
-				unsigned char *pData = *(unsigned char **)((DWORD)abi + 0xDC);
-				if (pData)
+				continue;
+			}
+			if ((abi->flag2 & 0x600) == 0x200)
+			{
+				pData = *(unsigned char **)((DWORD)abi + 0xDC);
+				// if (pData)
+				// {
+				// 	float val1 = *(float *)(pData + 0x4);
+				// 	int pData2 = *(int *)(pData + 0xC);
+				// 	if (pData2 > 0)
+				// 	{
+				// 		float val2 = *(float *)(pData2 + 0x40);
+				// 		float val3 = val1 - val2;
+				// 		float x = 0.0f;
+				// 		float y = 0.0f;
+				// 		float btnH1024 = 0.0f;
+
+				// 		if (GetCommandButtonPos1024(cmdbt, x, y, &btnH1024))
+				// 		{
+				// 			// 字体大小 = 按钮高度的 40%，限制在 [8, 48] 范围内
+				// 			int fontSize = (int)(btnH1024 * 0.40f + 0.5f);
+				// 			if (fontSize < 8)
+				// 				fontSize = 8;
+				// 			if (fontSize > 48)
+				// 				fontSize = 48;
+
+				// 			std::wstring text = std::format(L"{:3.0f}", std::trunc(val3));
+				// 			if (val3 < 1.00f)
+				// 			{
+				// 				text = std::format(L"{:3.2f}", val3);
+				// 			}
+				// 			paddingStringtoLength(text, 4);
+				// 			DrawTextToScreenReal(x, y, text.c_str(), 0xFFE0E0E0, true, true, fontSize);
+				// 		}
+				// 	}
+				// }
+			}
+			else
+			{
+				pData = *(unsigned char **)((DWORD)abi + 0x324);
+			}
+
+			if (pData)
+			{
+				float val1 = *(float *)(pData + 0x4);
+				int pData2 = *(int *)(pData + 0xC);
+				if (pData2 > 0)
 				{
-					float val1 = *(float *)(pData + 0x4);
-					int pData2 = *(int *)(pData + 0xC);
-					if (pData2 > 0)
+					float val2 = *(float *)(pData2 + 0x40);
+					float val3 = val1 - val2;
+					float x = 0.0f;
+					float y = 0.0f;
+					float btnH1024 = 0.0f;
+
+					if (GetCommandButtonPos1024(cmdbt, x, y, &btnH1024))
 					{
-						float val2 = *(float *)(pData2 + 0x40);
-						float val3 = val1 - val2;
-						float x = 0.0f;
-						float y = 0.0f;
-						float btnH1024 = 0.0f;
+						// 字体大小 = 按钮高度的 40%，限制在 [8, 48] 范围内
+						int fontSize = (int)(btnH1024 * 0.40f + 0.5f);
+						if (fontSize < 8)
+							fontSize = 8;
+						if (fontSize > 48)
+							fontSize = 48;
 
-						if (GetCommandButtonPos1024(cmdbt, x, y, &btnH1024))
+						std::wstring text = std::format(L"{:3.0f}", std::trunc(val3));
+						if (val3 < 1.00f)
 						{
-							// 字体大小 = 按钮高度的 40%，限制在 [8, 48] 范围内
-							int fontSize = (int)(btnH1024 * 0.40f + 0.5f);
-							if (fontSize < 8)
-								fontSize = 8;
-							if (fontSize > 48)
-								fontSize = 48;
-
-							std::wstring text = std::format(L"{:3.0f}", std::trunc(val3));
-							if (val3 < 1.00f)
-							{
-								text = std::format(L"{:3.2f}", val3);
-							}
-							paddingStringtoLength(text, 4);
-							DrawTextToScreenReal(x, y, text.c_str(), 0xFFE0E0E0, true, true, fontSize);
+							text = std::format(L"{:3.2f}", val3);
 						}
+						paddingStringtoLength(text, 4);
+						DrawTextToScreenReal(x, y, text.c_str(), 0xFFE0E0E0, true, true, fontSize);
 					}
 				}
 			}
