@@ -109,6 +109,7 @@ DWORD g_DrawSkillPanelOffset = 0;
 DWORD g_DrawSkillPanelOverlayOffset = 0;
 DWORD g_IsNeedDrawUnitOriginOffset = 0;
 
+DWORD g_Func6F0E8030 = 0;
 DWORD g_jmpback = 0;
 
 HGLRC War3GlobalOverlay_OPENGL = NULL;
@@ -1265,6 +1266,7 @@ void HookCooldown()
 	DWORD IsNeedDrawUnit2Offset = (DWORD)g_gameDllBase + 0x28ECF0;
 	FunHook((void *)IsNeedDrawUnit2Offset, (void *)MyIsNeedDrawUnit2, (void *&)g_oIsNeedDrawUnit2);
 #endif
+	g_Func6F0E8030 = (DWORD)g_gameDllBase + 0x0E8030;
 	DWORD pPreSetCooldown = (DWORD)g_gameDllBase;
 	pPreSetCooldown += 0x3502A0; // sub_6F35F170也可以
 	FunHook((void *)pPreSetCooldown, (void *)SetCdForAddr, (void *&)g_oRealFunc);
@@ -1384,49 +1386,50 @@ void DrawAbilityButtonInfo()
 		{
 			CAbility *abi = cmdbt->commandButtonData->ability;
 			unsigned char *pData = nullptr;
-			// if (abi && ((abi->flag2 & 0x200) != 0 && (abi->flag2 & 0x400) == 0))
 			if (!abi)
 			{
 				continue;
 			}
+
+			if (abi->id == 0 || abi->id == 'AHer' || abi->id == 'Apit' || abi->id == 'Asid' || abi->id == 'Asud')
+			{
+				continue;
+			}
+
 			if ((abi->flag2 & 0x600) == 0x200)
 			{
 				pData = *(unsigned char **)((DWORD)abi + 0xDC);
-				// if (pData)
-				// {
-				// 	float val1 = *(float *)(pData + 0x4);
-				// 	int pData2 = *(int *)(pData + 0xC);
-				// 	if (pData2 > 0)
-				// 	{
-				// 		float val2 = *(float *)(pData2 + 0x40);
-				// 		float val3 = val1 - val2;
-				// 		float x = 0.0f;
-				// 		float y = 0.0f;
-				// 		float btnH1024 = 0.0f;
-
-				// 		if (GetCommandButtonPos1024(cmdbt, x, y, &btnH1024))
-				// 		{
-				// 			// 字体大小 = 按钮高度的 40%，限制在 [8, 48] 范围内
-				// 			int fontSize = (int)(btnH1024 * 0.40f + 0.5f);
-				// 			if (fontSize < 8)
-				// 				fontSize = 8;
-				// 			if (fontSize > 48)
-				// 				fontSize = 48;
-
-				// 			std::wstring text = std::format(L"{:3.0f}", std::trunc(val3));
-				// 			if (val3 < 1.00f)
-				// 			{
-				// 				text = std::format(L"{:3.2f}", val3);
-				// 			}
-				// 			paddingStringtoLength(text, 4);
-				// 			DrawTextToScreenReal(x, y, text.c_str(), 0xFFE0E0E0, true, true, fontSize);
-				// 		}
-				// 	}
-				// }
 			}
 			else
 			{
-				pData = *(unsigned char **)((DWORD)abi + 0x324);
+				byte *lp = (byte *)abi;
+				DWORD oid = cmdbt->commandButtonData->orderId_8;
+				constexpr int MAX_ENTRY = 13;
+				int findIdx = -1;
+				for (int i = 0; i < MAX_ENTRY; i++)
+				{
+					DWORD id = *(DWORD *)(lp + 0xCC + i * 4);
+					if (id == oid)
+					{
+						findIdx = i;
+						break;
+					}
+				}
+
+				if (findIdx == -1)
+				{
+					continue;
+				}
+
+				float d = *(float *)(lp + 0x1C * findIdx + 0x1C4 + 0xC);
+				if (d > 0)
+				{
+					pData = *(byte **)(lp + 0x1C * findIdx + 0x1C4 + 0xC);
+				}
+				else
+				{
+					pData = *(byte **)(lp + 0x1C * findIdx + 0x318 + 0xC);
+				}
 			}
 
 			if (pData)
