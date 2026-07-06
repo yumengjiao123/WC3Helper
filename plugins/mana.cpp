@@ -410,6 +410,7 @@ BOOL WINAPI ShowManaBar(LPVOID gameDllBase, LPVOID hMod, bool ShowMana)
 	unsigned char p124b[] = {0x80, 0xBE, 0xA8, 0x01};
 	unsigned char p124e[] = {0x8B, 0x50, 0x3C, 0x3B};
 	unsigned char p126a[] = {0x7c, 0x73, 0x63, 0x6f};
+	unsigned char p127a[] = {0xcc, 0xcc, 0xcc, 0x55};
 
 	/*int result = *(int*)veraddr;
 	char str[10] = { 0 };
@@ -441,6 +442,19 @@ BOOL WINAPI ShowManaBar(LPVOID gameDllBase, LPVOID hMod, bool ShowMana)
 
 		*(int *)&Storm_401_org_malloc = (int)gameDllBase + 0x37A563;
 		*(int *)&HPMP_DRAW = (int)gameDllBase + 0x37A968;
+	}
+	else if (0 == memcmp(p127a, (unsigned char *)veraddr, sizeof(p127a)))
+	{
+		*(int *)&g16FF24 = (int)gameDllBase + 0x669B40; //
+		*(int *)&g16FF68 = (int)gameDllBase + 0x358CF0; //
+		*(int *)&a16FF64 = (int)gameDllBase + 0x0BD830; //
+		*(int *)&a16FF5C = (int)gameDllBase + 0xBD630; //
+		*(int *)&a16FF58 = (int)gameDllBase + 0x383F60; //
+		*(int *)&a16FF20 = (int)gameDllBase + 0x327020; // 
+		*(int *)&a2C7F10 = (int)gameDllBase + 0x6374A0; //
+
+		*(int *)&Storm_401_org_malloc = (int)gameDllBase + 0x374F14;//
+		*(int *)&HPMP_DRAW = (int)gameDllBase + 0x3784CA;//
 	}
 	else if (0 == memcmp(p126a, (unsigned char *)veraddr, sizeof(p126a))) // sizeof(p126a)
 	{
