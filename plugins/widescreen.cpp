@@ -56,6 +56,7 @@ void UpdateWideScreen(LPVOID gameDllBase)
 
 	unsigned char p124e[] = {0x8B, 0x50, 0x3C, 0x3B};
 	unsigned char p126a[] = {0x7c, 0x73, 0x63, 0x6f};
+	unsigned char p127a[] = {0xcc, 0xcc, 0xcc, 0x55};
 
 	LPVOID veraddr = NULL;
 	*(int *)&veraddr = (DWORD)offset + 0x636F5D;
@@ -68,6 +69,10 @@ void UpdateWideScreen(LPVOID gameDllBase)
 	{
 		offset += 0x7B66F0;
 	}
+	else if (0 == memcmp(p127a, (unsigned char *)veraddr, sizeof(p127a)))
+	{
+		offset += 0x0D31D0;
+	}
 	else
 	{
 		return;
@@ -76,7 +81,7 @@ void UpdateWideScreen(LPVOID gameDllBase)
 	FunHook((void *)offset, (void *)CreateMatrixPerspectiveFov, (void *&)p_orgCreateMatrixPerspectiveFov);
 }
 
-void ResetD3D() 
+void ResetD3D()
 {
 	// 强制游戏重新加载d3d
 	auto hwnd = GetGameWindow();
