@@ -84,13 +84,13 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 	case DLL_PROCESS_ATTACH:
 		DisableThreadLibraryCalls(hModule);
 		DoInit();
-		HideDll(hModule);
-		//hThread = CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)HotKeys, NULL, NULL, NULL);
-		//CloseHandle(hThread);
+		// HideDll(hModule);
+		// hThread = CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)HotKeys, NULL, NULL, NULL);
+		// CloseHandle(hThread);
 		break;
 	case DLL_PROCESS_DETACH:
 		UnHookCooldown();
-		//TerminateThread(hThread, 0);
+		// TerminateThread(hThread, 0);
 		break;
 	}
 	return TRUE;
@@ -550,19 +550,62 @@ bool HotKeyPressed(int iKey)
 
 void SetTls()
 {
-	DWORD Data = *(DWORD *)((DWORD)g_gameDllBase + 0xAE59AC);	  // 1.26 0xACEB4C
-	DWORD TlsIndex = *(DWORD *)((DWORD)g_gameDllBase + 0xACEA4C); // 1.26 0xAB7BF4
+	auto ver = GetWar3Version();
+	DWORD Data = *(DWORD *)((DWORD)g_gameDllBase + 0xAE59AC);
+	DWORD TlsIndex = *(DWORD *)((DWORD)g_gameDllBase + 0xACEA4C);
+	DWORD offsets = 0xAE59BC;
+	switch (ver)
+	{
+	case Version::v124e:
+		Data = *(DWORD *)((DWORD)g_gameDllBase + 0xAE59AC);
+		TlsIndex = *(DWORD *)((DWORD)g_gameDllBase + 0xACEA4C);
+		offsets = 0xAE59BC;
+		break;
+	case Version::v126a:
+		Data = *(DWORD *)((DWORD)g_gameDllBase + 0xACEB4C);
+		TlsIndex = *(DWORD *)((DWORD)g_gameDllBase + 0xAB7BF4);
+		offsets = 0xACEB5C;
+		break;
+	case Version::v127a:
+		Data = *(DWORD *)((DWORD)g_gameDllBase + 0xBB8978);
+		TlsIndex = *(DWORD *)((DWORD)g_gameDllBase + 0xBB8628);
+		offsets = 0xBB896C;
+		break;
+	default:
+		break;
+	}
 
 	if (TlsIndex)
 	{
-		DWORD v5 = **(DWORD **)(*(DWORD *)(*(DWORD *)((DWORD)g_gameDllBase + 0xAE59BC) + 4 * Data) + 44);
+		DWORD v5 = **(DWORD **)(*(DWORD *)(*(DWORD *)((DWORD)g_gameDllBase + offsets) + 4 * Data) + 44);
 		TlsSetValue(TlsIndex, *(LPVOID *)(v5 + 520));
 	}
 }
 
 bool IsInGame()
 {
-	return *(DWORD *)((DWORD)g_gameDllBase + 0xACC594) == 4 && *(DWORD *)((DWORD)g_gameDllBase + 0xACC590) == 4;
+	DWORD offset1 = 0;
+	DWORD offset2 = 0;
+	auto ver = GetWar3Version();
+	switch (ver)
+	{
+	case Version::v124e:
+		offset1 = 0xACC594;
+		offset2 = 0xACC590;
+		break;
+	case Version::v126a:
+		offset1 = 0xAB573C;
+		offset2 = 0xAB5738;
+		break;
+	case Version::v127a:
+		offset1 = 0xBE5F7C;
+		offset2 = 0xBE5F78;
+		break;
+	default:
+		return false;
+	}
+
+	return *(DWORD *)((DWORD)g_gameDllBase + offset1) == 4 && *(DWORD *)((DWORD)g_gameDllBase + offset2) == 4;
 }
 
 Version GetWar3Version()
