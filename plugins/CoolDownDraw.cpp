@@ -177,7 +177,7 @@ static void DrawTextToScreenReal(float x, float y, const wchar_t *text, DWORD co
 		// if (D3D_OK != g_pDevice->TestCooperativeLevel())
 		// 	return;
 
-		if (ver == Version::v124e)
+		if (ver == Version::v124e || ver == Version::v126a)
 		{
 			DrawTextD3D8(rx, ry, color, text, bCenter, realFontSize);
 		}
@@ -253,10 +253,10 @@ HRESULT STDMETHODCALLTYPE MyD3D8Reset(LPDIRECT3DDEVICE8 device, D3DPRESENT_PARAM
 HRESULT __fastcall MyEndScene(int GlobalWc3Data)
 {
 	IDirect3DDevice8 *pDevice = *(IDirect3DDevice8 **)(GlobalWc3Data + 1412);
-	if (ver == Version::v124e)
-	{
-		pDevice = *(IDirect3DDevice8 **)(GlobalWc3Data + 1412);
-	}
+	// if (ver == Version::v124e)
+	// {
+	// 	pDevice = *(IDirect3DDevice8 **)(GlobalWc3Data + 1412);
+	// }
 
 	// if (ver == Version::v127a)
 	// {
@@ -1077,6 +1077,11 @@ void HookD3D8()
 				EndScene_org += 0x52FD70;
 			}
 
+			if (ver == Version::v126a)
+			{
+				EndScene_org += 0x52F270;
+			}
+
 			if (ver == Version::v127a)
 			{
 				EndScene_org += 0x0ECFF0; // 1.27a
@@ -1292,6 +1297,11 @@ void HookCooldown()
 	if (ver == Version::v124e)
 	{
 		pPreSetCooldown += 0x3502A0; // sub_6F35F170也可以
+	}
+	else if (ver == Version::v126a)
+	{
+		pPreSetCooldown += 0x34F760;
+		spdlog::info("v126a");
 	}
 	else if (ver == Version::v127a)
 	{
