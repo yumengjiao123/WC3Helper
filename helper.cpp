@@ -1,5 +1,5 @@
 ﻿// #include "pch.h"
-#include <Windows.h>
+#include "common.h"
 #include "plugins/mana.h"
 #include "plugins/widescreen.h"
 #include "plugins/unitinfo.h"
@@ -85,12 +85,12 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 		DisableThreadLibraryCalls(hModule);
 		DoInit();
 		HideDll(hModule);
-		hThread = CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)HotKeys, NULL, NULL, NULL);
-		CloseHandle(hThread);
+		//hThread = CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)HotKeys, NULL, NULL, NULL);
+		//CloseHandle(hThread);
 		break;
 	case DLL_PROCESS_DETACH:
 		UnHookCooldown();
-		TerminateThread(hThread, 0);
+		//TerminateThread(hThread, 0);
 		break;
 	}
 	return TRUE;
@@ -128,8 +128,8 @@ void DoInit()
 		spdlog::info("WideScreen loaded");
 	}
 
-	initJASS();
-	spdlog::info("JASS Env loaded");
+	// initJASS();
+	// spdlog::info("JASS Env loaded");
 #ifndef WC3HELPER_BASIC
 	HookChatMessage();
 	spdlog::info("ChatMessage hooked");
@@ -563,4 +563,30 @@ void SetTls()
 bool IsInGame()
 {
 	return *(DWORD *)((DWORD)g_gameDllBase + 0xACC594) == 4 && *(DWORD *)((DWORD)g_gameDllBase + 0xACC590) == 4;
+}
+
+Version GetWar3Version()
+{
+	uint8_t p124b[] = {0x80, 0xBE, 0xA8, 0x01};
+	uint8_t p124e[] = {0x8B, 0x50, 0x3C, 0x3B};
+	uint8_t p126a[] = {0x7c, 0x73, 0x63, 0x6f};
+	uint8_t p127a[] = {0xcc, 0xcc, 0xcc, 0x55};
+
+	const uint8_t *veraddr = (const uint8_t *)((DWORD)g_gameDllBase + 0x636F5D);
+	if (0 == memcmp(p124e, veraddr, sizeof(p124e)))
+	{
+		return Version::v124e;
+	}
+	else if (0 == memcmp(p126a, veraddr, sizeof(p126a)))
+	{
+		return Version::v126a;
+	}
+	else if (0 == memcmp(p127a, veraddr, sizeof(p127a)))
+	{
+		return Version::v127a;
+	}
+	else
+	{
+		return Version::unknown;
+	}
 }

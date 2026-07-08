@@ -11,6 +11,9 @@ typedef void *POINTER_64 PVOID64;
 #include "jass.h"
 #include <d3dx8.h>
 
+// 新增1.27支持
+#include "CoolDownDrawD3D9.h"
+
 #define GL_GLEXT_PROTOTYPES
 #include <gl\gl.h>
 #include <gl\glu.h>
@@ -30,25 +33,6 @@ extern LPVOID g_gameDllBase;
 extern DWORD LocalHero;
 extern HWND hWnd;
 extern bool g_IsPlayerObserver;
-
-// 单个字符缓存
-struct CharGlyph
-{
-	union
-	{
-		GLuint t1; // 字符纹理ID
-		LPDIRECT3DTEXTURE8 t2;
-	} tex;
-	int w, h;		  // 字形宽高
-	int bearingX;	  // 左偏移
-	int bearingY;	  // 上偏移
-	int advance;	  // 字符横向步进
-	float uMax, vMax; // 新增：字形在幂次纹理内的UV边界
-	CharGlyph()
-	{
-		tex.t1 = 0;
-	}
-};
 
 struct D3DStateBackup
 {
@@ -73,7 +57,8 @@ std::vector<CCommandButton *> g_ButtonQueue;
 FT_Library g_ftLib = nullptr;
 FT_Face g_ftFace = nullptr;
 std::unordered_map<DWORD, CharGlyph> g_charCache;
-LPDIRECT3DDEVICE8 g_pDevice = NULL;
+// LPDIRECT3DDEVICE8 g_pDevice = NULL;
+LPVOID g_pDevice = NULL;
 
 bool g_init = false;
 bool bIsOpenGL = false;
@@ -82,6 +67,7 @@ bool vsyncInitialized = false;
 bool resetcalled = false;
 bool OLD_D3D_PARAMETERS_LOADED = false;
 bool g_hookCoolDown = false;
+Version ver = Version::unknown;
 
 void FunHook(void *pOldFuncAddr, void *pNewFuncAddr, void *&pCallBackFuncAddr);
 void UnFunHook(void *pOldFuncAddr, void *pNewFuncAddr);
@@ -188,10 +174,17 @@ static void DrawTextToScreenReal(float x, float y, const wchar_t *text, DWORD co
 	}
 	else
 	{
-		if (D3D_OK != g_pDevice->TestCooperativeLevel())
-			return;
+		// if (D3D_OK != g_pDevice->TestCooperativeLevel())
+		// 	return;
 
-		DrawTextD3D8(rx, ry, color, text, bCenter, realFontSize);
+		if (ver == Version::v124e)
+		{
+			DrawTextD3D8(rx, ry, color, text, bCenter, realFontSize);
+		}
+		else if (ver == Version::v127a)
+		{
+			DrawTextD3D9(rx, ry, color, text, bCenter, realFontSize);
+		}
 	}
 }
 
@@ -260,6 +253,16 @@ HRESULT STDMETHODCALLTYPE MyD3D8Reset(LPDIRECT3DDEVICE8 device, D3DPRESENT_PARAM
 HRESULT __fastcall MyEndScene(int GlobalWc3Data)
 {
 	IDirect3DDevice8 *pDevice = *(IDirect3DDevice8 **)(GlobalWc3Data + 1412);
+	if (ver == Version::v124e)
+	{
+		pDevice = *(IDirect3DDevice8 **)(GlobalWc3Data + 1412);
+	}
+
+	// if (ver == Version::v127a)
+	// {
+	// 	IDirect3DDevice9 *pDevice = *(IDirect3DDevice9 **)(GlobalWc3Data + 1412);
+	// }
+
 	if (!pDevice || pDevice->TestCooperativeLevel() != D3D_OK)
 	{
 		spdlog::info("pDevice is Null");
@@ -275,6 +278,10 @@ HRESULT __fastcall MyEndScene(int GlobalWc3Data)
 		{
 			void **pVTable = *(void ***)g_pDevice;
 			DWORD D3dReset_org = (DWORD)pVTable[14];
+			if (ver == Version::v127a)
+			{
+				D3dReset_org = (DWORD)pVTable[16];
+			}
 			if (D3dReset_org)
 			{
 				FunHook((void *)D3dReset_org, (void *)MyD3D8Reset, (void *&)g_oD3dReset);
@@ -286,7 +293,8 @@ HRESULT __fastcall MyEndScene(int GlobalWc3Data)
 
 	DrawSystemInfo();
 	DrawAbilityButtonInfo();
-	return pDevice->EndScene();
+	return g_oEndScene(GlobalWc3Data);
+	//return pDevice->EndScene();
 }
 
 bool InitFreeType(int fontSize)
@@ -322,24 +330,25 @@ void FreeFreeTypeRes()
 	{
 		if (bIsOpenGL)
 		{
-			if (kv.second.tex.t1 != 0)
+			if (kv.second.tex != nullptr)
 			{
-				glDeleteTextures(1, &kv.second.tex.t1);
-				kv.second.tex.t1 = 0;
+				GLuint gltex = (GLuint)(uintptr_t)kv.second.tex;
+				glDeleteTextures(1, &gltex);
+				kv.second.tex = nullptr;
 			}
 		}
 		else
 		{
-			if (kv.second.tex.t2 != nullptr)
+			if (kv.second.tex != nullptr)
 			{
 				try
 				{
-					kv.second.tex.t2->Release();
+					((LPDIRECT3DTEXTURE8)kv.second.tex)->Release();
 				}
 				catch (...)
 				{
 				}
-				kv.second.tex.t2 = nullptr;
+				kv.second.tex = nullptr;
 			}
 		}
 	}
@@ -437,7 +446,7 @@ CharGlyph LoadGlyph(wchar_t ch, int fontSize)
 	// 3. 关键：恢复原来的对齐，不影响War3原生贴图加载
 	glPixelStorei(GL_UNPACK_ALIGNMENT, oldAlign);
 
-	glyph.tex.t1 = tex;
+	glyph.tex = (void *)(uintptr_t)tex;
 	glyph.uMax = (float)w / texW;
 	glyph.vMax = (float)h / texH;
 	g_charCache[idx] = glyph;
@@ -489,7 +498,7 @@ CharGlyph LoadGlyphD3D(wchar_t ch, int fontSize)
 	int texH = nextPow2(h);
 
 	LPDIRECT3DTEXTURE8 tex = nullptr;
-	HRESULT hr = g_pDevice->CreateTexture(texW, texH, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &tex);
+	HRESULT hr = ((LPDIRECT3DDEVICE8)g_pDevice)->CreateTexture(texW, texH, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &tex);
 	if (FAILED(hr))
 	{
 		g_charCache[idx] = glyph;
@@ -523,7 +532,7 @@ CharGlyph LoadGlyphD3D(wchar_t ch, int fontSize)
 	}
 	tex->UnlockRect(0);
 
-	glyph.tex.t2 = tex;
+	glyph.tex = tex;
 	glyph.uMax = (float)w / (float)texW;
 	glyph.vMax = (float)h / (float)texH;
 	g_charCache[idx] = glyph;
@@ -686,6 +695,7 @@ void Setup2DOrtho(LPDIRECT3DDEVICE8 pDev)
 
 void DrawTextD3D8(float startX, float startY, DWORD color, const wchar_t *text, bool bCenter, int fontSize)
 {
+	LPDIRECT3DDEVICE8 pDev = (LPDIRECT3DDEVICE8)g_pDevice;
 	if (!g_ftFace || !text)
 		return;
 
@@ -694,12 +704,12 @@ void DrawTextD3D8(float startX, float startY, DWORD color, const wchar_t *text, 
 		return;
 	}
 
-	if (D3D_OK != g_pDevice->TestCooperativeLevel())
+	if (D3D_OK != pDev->TestCooperativeLevel())
 		return;
 
 	D3DStateBackup state;
-	SaveD3DState(g_pDevice, state);
-	Setup2DOrtho(g_pDevice);
+	SaveD3DState(pDev, state);
+	Setup2DOrtho(pDev);
 
 	if (fontSize <= 0)
 		fontSize = 22;
@@ -711,7 +721,7 @@ void DrawTextD3D8(float startX, float startY, DWORD color, const wchar_t *text, 
 		for (const wchar_t *p = text; *p; ++p)
 		{
 			CharGlyph glyph = LoadGlyphD3D(*p, fontSize);
-			if (glyph.tex.t2 && glyph.w > 0 && glyph.h > 0)
+			if (glyph.tex && glyph.w > 0 && glyph.h > 0)
 			{
 				float x0 = measureX + (float)glyph.bearingX;
 				float y0 = -(float)glyph.bearingY;
@@ -757,12 +767,12 @@ void DrawTextD3D8(float startX, float startY, DWORD color, const wchar_t *text, 
 		{
 			wchar_t ch = *p;
 			CharGlyph glyph = LoadGlyphD3D(ch, fontSize);
-			if (glyph.tex.t2)
+			if (glyph.tex)
 			{
-				g_pDevice->SetTexture(0, glyph.tex.t2);
+				pDev->SetTexture(0, (LPDIRECT3DTEXTURE8)glyph.tex);
 				float x = curX + glyph.bearingX;
 				float y = (startY + off[1]) - glyph.bearingY;
-				DrawCharQuad(g_pDevice, x, y, (float)glyph.w, (float)glyph.h, outlineColor, glyph.uMax, glyph.vMax);
+				DrawCharQuad(pDev, x, y, (float)glyph.w, (float)glyph.h, outlineColor, glyph.uMax, glyph.vMax);
 			}
 			curX += glyph.advance;
 			p++;
@@ -775,22 +785,22 @@ void DrawTextD3D8(float startX, float startY, DWORD color, const wchar_t *text, 
 	{
 		wchar_t ch = *text;
 		CharGlyph glyph = LoadGlyphD3D(ch, fontSize);
-		if (!glyph.tex.t2)
+		if (!glyph.tex)
 		{
 			curX += glyph.advance;
 			text++;
 			continue;
 		}
-		g_pDevice->SetTexture(0, glyph.tex.t2);
+		pDev->SetTexture(0, (LPDIRECT3DTEXTURE8)glyph.tex);
 		float x = curX + glyph.bearingX;
 		float y = startY - glyph.bearingY;
-		DrawCharQuad(g_pDevice, x, y, (float)glyph.w, (float)glyph.h, color, glyph.uMax, glyph.vMax);
+		DrawCharQuad(pDev, x, y, (float)glyph.w, (float)glyph.h, color, glyph.uMax, glyph.vMax);
 		curX += glyph.advance;
 		text++;
 	}
 
-	g_pDevice->SetTexture(0, nullptr);
-	RestoreD3DState(g_pDevice, state);
+	pDev->SetTexture(0, nullptr);
+	RestoreD3DState(pDev, state);
 }
 
 void SetOverlayOrtho()
@@ -852,7 +862,7 @@ void DrawOverlayText(float x, float y, DWORD dwColor, const wchar_t *text, float
 		for (const wchar_t *p = text; *p; ++p)
 		{
 			CharGlyph glyph = LoadGlyph(*p, fontSize);
-			if (glyph.tex.t1 && glyph.w > 0 && glyph.h > 0)
+			if (glyph.tex && glyph.w > 0 && glyph.h > 0)
 			{
 				float x0 = measureX + (float)glyph.bearingX;
 				float y0 = -(float)glyph.bearingY;
@@ -912,9 +922,9 @@ void DrawOverlayText(float x, float y, DWORD dwColor, const wchar_t *text, float
 		{
 			wchar_t ch = *p;
 			CharGlyph glyph = LoadGlyph(ch, fontSize);
-			if (glyph.tex.t1 && glyph.w > 0 && glyph.h > 0)
+			if (glyph.tex && glyph.w > 0 && glyph.h > 0)
 			{
-				glBindTexture(GL_TEXTURE_2D, glyph.tex.t1);
+				glBindTexture(GL_TEXTURE_2D, (GLuint)(uintptr_t)glyph.tex);
 				float x0 = (float)(oCurX + glyph.bearingX);
 				float y0 = (float)(oy - glyph.bearingY);
 				float x1 = x0 + (float)glyph.w;
@@ -952,9 +962,9 @@ void DrawOverlayText(float x, float y, DWORD dwColor, const wchar_t *text, float
 		// glyph.w *= scale;
 		// glyph.h *= scale;
 
-		if (glyph.tex.t1 && glyph.w > 0 && glyph.h > 0)
+		if (glyph.tex && glyph.w > 0 && glyph.h > 0)
 		{
-			glBindTexture(GL_TEXTURE_2D, glyph.tex.t1);
+			glBindTexture(GL_TEXTURE_2D, (GLuint)(uintptr_t)glyph.tex);
 			float x0 = (float)(curX + glyph.bearingX);
 			float y0 = (float)(y - glyph.bearingY);
 			float x1 = x0 + (float)glyph.w;
@@ -1061,7 +1071,16 @@ void HookD3D8()
 			spdlog::info("HookD3D8");
 			DirectxHookInitialized = true;
 			DWORD EndScene_org = (DWORD)g_gameDllBase;
-			EndScene_org += 0x52FD70;
+
+			if (ver == Version::v124e)
+			{
+				EndScene_org += 0x52FD70;
+			}
+
+			if (ver == Version::v127a)
+			{
+				EndScene_org += 0x0ECFF0; // 1.27a
+			}
 			FunHook((void *)EndScene_org, (void *)MyEndScene, (void *&)g_oEndScene);
 		}
 	}
@@ -1250,8 +1269,10 @@ int __fastcall MyIsNeedDrawUnit2(unsigned char *UnitAddr, int)
 
 void HookCooldown()
 {
+	ver = GetWar3Version();
 	InitFreeType();
 	HookD3D8();
+
 #ifndef WC3HELPER_BASIC
 	g_DrawSkillPanelOffset = (DWORD)g_gameDllBase + 0x277FE0;
 	g_DrawSkillPanelOverlayOffset = (DWORD)g_gameDllBase + 0x278090;
@@ -1268,7 +1289,19 @@ void HookCooldown()
 #endif
 	g_Func6F0E8030 = (DWORD)g_gameDllBase + 0x0E8030;
 	DWORD pPreSetCooldown = (DWORD)g_gameDllBase;
-	pPreSetCooldown += 0x3502A0; // sub_6F35F170也可以
+	if (ver == Version::v124e)
+	{
+		pPreSetCooldown += 0x3502A0; // sub_6F35F170也可以
+	}
+	else if (ver == Version::v127a)
+	{
+		pPreSetCooldown += 0x398B30;
+		spdlog::info("v127a");
+	}
+	else
+	{
+		return;
+	}
 	FunHook((void *)pPreSetCooldown, (void *)SetCdForAddr, (void *&)g_oRealFunc);
 	g_hookCoolDown = true;
 	atexit(UnHookCooldown);
@@ -1351,29 +1384,6 @@ void __fastcall SetCdForAddr(DWORD pThis, int dummy)
 		{
 			g_ButtonQueue.push_back(cmdbt);
 		}
-
-		// if (cmdbt->commandButtonData)
-		// {
-		// 	DWORD abi = (DWORD)cmdbt->commandButtonData->ability;
-		// 	if (abi && (*(DWORD *)(abi + 0x20) & 0x600) == 0x200)
-		// 	{
-		// 	}
-		// 	else
-		// 	{
-		// 		unsigned char *pData = *(unsigned char **)((DWORD)abi + 0x324);
-		// 		if (pData)
-		// 		{
-		// 			float val1 = *(float *)(pData + 0x4);
-		// 			int pData2 = *(int *)(pData + 0xC);
-		// 			if (pData2 > 0)
-		// 			{
-		// 				float val2 = *(float *)(pData2 + 0x40);
-		// 				float val3 = val1 - val2;
-		// 				spdlog::info("val3 = {:3.2f}", val3);
-		// 			}
-		// 		}
-		// 	}
-		// }
 	}
 	g_oRealFunc(pThis, dummy);
 }

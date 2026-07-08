@@ -1,5 +1,5 @@
 ﻿// #include "pch.h"
-#include <windows.h>
+#include "common.h"
 #include "widescreen.h"
 #include <detours.h>
 #include <iostream>
@@ -53,23 +53,16 @@ void __fastcall CreateMatrixPerspectiveFov(float *outMatrix, DWORD edx, float fo
 void UpdateWideScreen(LPVOID gameDllBase)
 {
 	DWORD offset = (DWORD)gameDllBase;
-
-	unsigned char p124e[] = {0x8B, 0x50, 0x3C, 0x3B};
-	unsigned char p126a[] = {0x7c, 0x73, 0x63, 0x6f};
-	unsigned char p127a[] = {0xcc, 0xcc, 0xcc, 0x55};
-
-	LPVOID veraddr = NULL;
-	*(int *)&veraddr = (DWORD)offset + 0x636F5D;
-
-	if (0 == memcmp(p124e, (unsigned char *)veraddr, sizeof(p124e)))
+	Version ver = GetWar3Version();
+	if (ver == Version::v124e)
 	{
 		offset += 0x7B6E90;
 	}
-	else if (0 == memcmp(p126a, (unsigned char *)veraddr, sizeof(p126a)))
+	else if (ver == Version::v126a)
 	{
 		offset += 0x7B66F0;
 	}
-	else if (0 == memcmp(p127a, (unsigned char *)veraddr, sizeof(p127a)))
+	else if (ver == Version::v127a)
 	{
 		offset += 0x0D31D0;
 	}

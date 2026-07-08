@@ -1,6 +1,6 @@
 ﻿// #include "pch.h"
 #pragma once
-#include <windows.h>
+#include "common.h"
 #include <string>
 
 #pragma pack(push, 1)

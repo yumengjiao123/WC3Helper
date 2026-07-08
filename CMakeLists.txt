@@ -15,6 +15,7 @@ if(MSVC)
     add_compile_options(/W4 /WX- /utf-8)
 	add_compile_definitions(WIN32_LEAN_AND_MEAN UNICODE _UNICODE SPDLOG_USE_STD_FORMAT)
 	add_compile_definitions(WC3HELPER_LIBRARY _CRT_SECURE_NO_WARNINGS)
+	add_compile_definitions(WC3HELPER_BASIC)
 	# 打开下面这行，开启静态链接运行时库
 	# set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 else()
@@ -40,6 +41,7 @@ set(MAIN_SOURCES
 	plugins/ChatCommand.cpp
 	plugins/unitcommand.cpp
 	plugins/CoolDownDraw.cpp
+	plugins/CoolDownDrawD3D9.cpp
 )
 
 # 创建WC3Helper DLL
@@ -56,6 +58,8 @@ target_link_libraries(WC3Helper PRIVATE
 	detours
 	d3d8
     d3dx8
+	d3d9
+	d3dx9
 	opengl32
 	freetype28
 	legacy_stdio_definitions.lib

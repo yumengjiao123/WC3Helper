@@ -2,7 +2,7 @@
 //
 
 // #include "pch.h"
-#include <windows.h>
+#include "common.h"
 #include "mana.h"
 // #include "LDE64.h"
 // #pragma comment(lib,"LDE64.lib")
@@ -49,7 +49,7 @@ double a164A10 = 0.0005000000237487257; // ds:[00164A10]=0.0005000000237487257
 double a164A08 = 0.006000000052154064;	// ds:[00164A08]=0.006000000052154064
 double a1649D4 = 0.03000000;			// ds:[004149D4]=0.03000000
 double a1649D0 = 0.004000000;			// 蓝条的高度，默认0.004
-double a1649CC = 0.3000000;//double a1649CC = 0.3000000;
+double a1649CC = 0.3000000;				// double a1649CC = 0.3000000;
 
 int ManabarEnabled = false;
 
@@ -58,7 +58,7 @@ void printInt(int addr)
 	spdlog::info(std::format("int: {}", addr));
 }
 
-void printaddr(void* addr)
+void printaddr(void *addr)
 {
 	spdlog::info("address: 0x{:x}", (DWORD)addr);
 }
@@ -404,23 +404,11 @@ BOOL WINAPI ShowManaBar(LPVOID gameDllBase, LPVOID hMod, bool ShowMana)
 	if (gameDllBase == NULL)
 		return FALSE;
 
-	ADDRESS veraddr = NULL;
-	*(int *)&veraddr = (int)gameDllBase + 0x636F5D;
-
-	unsigned char p124b[] = {0x80, 0xBE, 0xA8, 0x01};
-	unsigned char p124e[] = {0x8B, 0x50, 0x3C, 0x3B};
-	unsigned char p126a[] = {0x7c, 0x73, 0x63, 0x6f};
-	unsigned char p127a[] = {0xcc, 0xcc, 0xcc, 0x55};
-
-	/*int result = *(int*)veraddr;
-	char str[10] = { 0 };
-	sprintf(str, "%08X", result);
-	MessageBoxA(NULL, str, "error", MB_OK);*/
-
-	if (0 == memcmp(p124e, (unsigned char *)veraddr, sizeof(p124e)))
+	Version ver = GetWar3Version();
+	if (ver == Version::v124e)
 	{
 		*(int *)&g16FF24 = (int)gameDllBase + 0x27B9B0; // 6F27B9B0
-		*(int *)&g16FF68 = (int)gameDllBase + 0x334CC0; // 0x6f334CC0
+		*(int *)&g16FF68 = (int)gameDllBase + 0x334CC0; // 0x6f334CC0`
 		*(int *)&a16FF64 = (int)gameDllBase + 0x606950; // 0x6f606950
 		*(int *)&a16FF5C = (int)gameDllBase + 0x606460; // 0x6f606460
 		*(int *)&a16FF58 = (int)gameDllBase + 0x35A800; // 0x6f35A800
@@ -430,7 +418,7 @@ BOOL WINAPI ShowManaBar(LPVOID gameDllBase, LPVOID hMod, bool ShowMana)
 		*(int *)&Storm_401_org_malloc = (int)gameDllBase + 0x37A623; // 0x6f37A623
 		*(int *)&HPMP_DRAW = (int)gameDllBase + 0x37AA28;			 // 0x6F37AA28
 	}
-	else if (0 == memcmp(p124b, (unsigned char *)veraddr, sizeof(p124b)))
+	else if (ver == Version::v124b)
 	{
 		*(int *)&g16FF24 = (int)gameDllBase + 0x27B950; // 6f27B950
 		*(int *)&g16FF68 = (int)gameDllBase + 0x334C00; // 6f334C00
@@ -443,20 +431,7 @@ BOOL WINAPI ShowManaBar(LPVOID gameDllBase, LPVOID hMod, bool ShowMana)
 		*(int *)&Storm_401_org_malloc = (int)gameDllBase + 0x37A563;
 		*(int *)&HPMP_DRAW = (int)gameDllBase + 0x37A968;
 	}
-	else if (0 == memcmp(p127a, (unsigned char *)veraddr, sizeof(p127a)))
-	{
-		*(int *)&g16FF24 = (int)gameDllBase + 0x669B40; //
-		*(int *)&g16FF68 = (int)gameDllBase + 0x358CF0; //
-		*(int *)&a16FF64 = (int)gameDllBase + 0x0BD830; //
-		*(int *)&a16FF5C = (int)gameDllBase + 0xBD630; //
-		*(int *)&a16FF58 = (int)gameDllBase + 0x383F60; //
-		*(int *)&a16FF20 = (int)gameDllBase + 0x327020; // 
-		*(int *)&a2C7F10 = (int)gameDllBase + 0x6374A0; //
-
-		*(int *)&Storm_401_org_malloc = (int)gameDllBase + 0x374F14;//
-		*(int *)&HPMP_DRAW = (int)gameDllBase + 0x3784CA;//
-	}
-	else if (0 == memcmp(p126a, (unsigned char *)veraddr, sizeof(p126a))) // sizeof(p126a)
+	else if (ver == Version::v126a) // sizeof(p126a)
 	{
 		*(int *)&g16FF24 = (int)gameDllBase + 0x27AE90; // 6F27B9B0
 		*(int *)&g16FF68 = (int)gameDllBase + 0x334180; // 0x6f334CC0
@@ -468,6 +443,19 @@ BOOL WINAPI ShowManaBar(LPVOID gameDllBase, LPVOID hMod, bool ShowMana)
 
 		*(int *)&Storm_401_org_malloc = (int)gameDllBase + 0x379AE3; // 0x6f37A623
 		*(int *)&HPMP_DRAW = (int)gameDllBase + 0x379EE8;			 // 0x6F37AA28
+	}
+	else if (ver == Version::v127a)
+	{
+		*(int *)&g16FF24 = (int)gameDllBase + 0x669B40; //
+		*(int *)&g16FF68 = (int)gameDllBase + 0x358CF0; //
+		*(int *)&a16FF64 = (int)gameDllBase + 0x0BD830; //
+		*(int *)&a16FF5C = (int)gameDllBase + 0xBD630;	//
+		*(int *)&a16FF58 = (int)gameDllBase + 0x383F60; //
+		*(int *)&a16FF20 = (int)gameDllBase + 0x327020; //
+		*(int *)&a2C7F10 = (int)gameDllBase + 0x6374A0; //
+
+		*(int *)&Storm_401_org_malloc = (int)gameDllBase + 0x374F14; //
+		*(int *)&HPMP_DRAW = (int)gameDllBase + 0x3784CA;			 //
 	}
 	else
 	{
