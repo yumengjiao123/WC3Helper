@@ -139,15 +139,15 @@ static void DrawTextToScreenReal(float x, float y, const wchar_t *text, DWORD co
 		{
 			GLint viewport[4];
 			glGetIntegerv(GL_VIEWPORT, viewport);
-			scaleX = viewport[2] / 1024.0f;
-			scaleY = viewport[3] / 768.0f;
+			scaleX = viewport[2] / 800.0f;
+			scaleY = viewport[3] / 600.0f;
 			rx *= scaleX;
 			ry *= scaleY;
 		}
 		else
 		{
-			scaleX = iWidth / 1024.0f;
-			scaleY = iHeight / 768.0f;
+			scaleX = iWidth / 800.0f;
+			scaleY = iHeight / 600.0f;
 			rx = x * scaleX;
 			ry = y * scaleY;
 		}
@@ -162,7 +162,7 @@ static void DrawTextToScreenReal(float x, float y, const wchar_t *text, DWORD co
 	}
 	else
 	{
-		// fontSize 是 1024x768 空间下的像素大小，换算到实际屏幕像素
+		// fontSize 是 800x600 空间下的像素大小，换算到实际屏幕像素
 		realFontSize = (int)(fontSize * pixelScale + 0.5f);
 	}
 	if (realFontSize < 6)
@@ -1346,7 +1346,7 @@ void paddingStringtoLength(std::wstring &str, int len)
 	str.append(rightpad, ' ');
 }
 
-bool GetCommandButtonPos1024(CCommandButton *btn, float &x, float &y, float *outBtnH1024 = nullptr)
+bool GetCommandButtonPos(CCommandButton *btn, float &x, float &y, float *outBtnHeight = nullptr)
 {
 	if (!btn)
 		return false;
@@ -1367,13 +1367,13 @@ bool GetCommandButtonPos1024(CCommandButton *btn, float &x, float &y, float *out
 	float uiCenterX = (uiLeft + uiRight) * 0.5f;
 	float uiCenterY = (uiTop + uiBottom) * 0.5f;
 
-	x = uiCenterX / UI_W * 1024.0f;
-	y = (UI_H - uiCenterY) / UI_H * 768.0f;
+	x = uiCenterX / UI_W * 800.0f;
+	y = (UI_H - uiCenterY) / UI_H * 600.0f;
 
-	if (outBtnH1024)
+	if (outBtnHeight)
 	{
-		// 按钮在 1024x768 空间的高度（像素）
-		*outBtnH1024 = (uiTop - uiBottom) / UI_H * 768.0f;
+		// 按钮在 800*600 空间的高度（像素）
+		*outBtnHeight = (uiTop - uiBottom) / UI_H * 600.0f;
 	}
 
 	return true;
@@ -1462,12 +1462,12 @@ void DrawAbilityButtonInfo()
 					float val3 = val1 - val2;
 					float x = 0.0f;
 					float y = 0.0f;
-					float btnH1024 = 0.0f;
+					float btnHeight = 0.0f;
 
-					if (GetCommandButtonPos1024(cmdbt, x, y, &btnH1024))
+					if (GetCommandButtonPos(cmdbt, x, y, &btnHeight))
 					{
 						// 字体大小 = 按钮高度的 40%，限制在 [8, 48] 范围内
-						int fontSize = (int)(btnH1024 * 0.40f + 0.5f);
+						int fontSize = (int)(btnHeight * 0.40f + 0.5f);
 						if (fontSize < 8)
 							fontSize = 8;
 						if (fontSize > 48)
