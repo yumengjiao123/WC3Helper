@@ -75,5 +75,5 @@ set_target_properties(WC3Helper PROPERTIES
 	# RUNTIME_OUTPUT_DIRECTORY_DEBUG   "E:/games/Warcraft III/"
 	# RUNTIME_OUTPUT_DIRECTORY_RELEASE "E:/games/Warcraft III/"
 	SUFFIX ".mix"
-	OUTPUT_NAME "strom80"
+	# OUTPUT_NAME "strom80"
 )
