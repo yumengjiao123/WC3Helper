@@ -78,7 +78,7 @@ using WGLSwapLayerBuffers = int(__stdcall *)(HDC, unsigned int);
 using Present = HRESULT(__stdcall *)(LPDIRECT3DDEVICE8, CONST RECT *, CONST RECT *, HWND, CONST RGNDATA *);
 using IsNeedDrawUnitOrigin = int(__thiscall *)(void *);
 
-using pTargetFunc = void(__fastcall *)(DWORD pThis, int dummy);
+using pTargetFunc = double(__fastcall *)(DWORD pThis, int dummy);
 pTargetFunc g_oRealFunc = nullptr;
 
 D3DReset g_oD3dReset = nullptr;
@@ -109,8 +109,6 @@ void SaveD3DState(LPDIRECT3DDEVICE8 pDev, D3DStateBackup &outState);
 void RestoreD3DState(LPDIRECT3DDEVICE8 pDev, D3DStateBackup &state);
 void Setup2DOrtho(LPDIRECT3DDEVICE8 pDev);
 void DrawAbilityButtonInfo();
-
-void __fastcall SetCdForAddr(DWORD pThis, int dummy);
 
 void UnHookCooldown();
 
@@ -294,7 +292,7 @@ HRESULT __fastcall MyEndScene(int GlobalWc3Data)
 	DrawSystemInfo();
 	DrawAbilityButtonInfo();
 	return g_oEndScene(GlobalWc3Data);
-	//return pDevice->EndScene();
+	// return pDevice->EndScene();
 }
 
 bool InitFreeType(int fontSize)
@@ -1379,13 +1377,12 @@ bool GetCommandButtonPos(CCommandButton *btn, float &x, float &y, float *outBtnH
 	return true;
 }
 
-void __fastcall SetCdForAddr(DWORD pThis, int dummy)
+double __fastcall SetCdForAddr(DWORD pThis, int dummy)
 {
 	CCommandButton *cmdbt = (CCommandButton *)pThis;
 	if (g_ButtonQueue.size() >= 18) // 18 个按钮, 12个技能 + 6个物品栏按钮
 	{
-		g_oRealFunc(pThis, dummy);
-		return;
+		return g_oRealFunc(pThis, dummy);
 	}
 
 	if (cmdbt)
@@ -1395,7 +1392,7 @@ void __fastcall SetCdForAddr(DWORD pThis, int dummy)
 			g_ButtonQueue.push_back(cmdbt);
 		}
 	}
-	g_oRealFunc(pThis, dummy);
+	return g_oRealFunc(pThis, dummy);
 }
 
 void DrawAbilityButtonInfo()

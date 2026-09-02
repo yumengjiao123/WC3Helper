@@ -418,4 +418,4 @@ struct CCommandButton
 
 std::string GetAbilityCCID(DWORD abilityID);
 
-void __fastcall SetCdForAddr(DWORD pThis, int dummy);
+double __fastcall SetCdForAddr(DWORD pThis, int dummy);
