@@ -173,13 +173,7 @@ std::string GetAbilityFourCC(DWORD abilityID)
 	ccid[0] = abilityID >> 24 & 0xFF;
 	return ccid;
 }
-
-int JumpBackAddr7()
-{
-	MessageBoxA(0, 0, 0, 7);
-	return 0;
-}
-
+#ifndef WC3HELPER_BASIC
 int __fastcall MyIsDrawSkillPanel(unsigned char *UnitAddr, int addr1)
 {
 	int result;
@@ -305,6 +299,7 @@ int __fastcall MyIsNeedDrawUnit2(unsigned char *UnitAddr, int)
 	}
 	return 0;
 }
+#endif
 
 void HookCooldown()
 {
@@ -330,15 +325,19 @@ void HookCooldown()
 
 			// 系统信息：挂到游戏 UI 的每帧动画 tick 上，属于界面更新流程本身，
 			// 不再需要 EndScene / wglSwapLayerBuffers 任何渲染时机。
+			DWORD pUiTick = 0;
 			if (ver == Version::v124e && g_showSystemInfo)
 			{
-				DWORD pUiTick = (DWORD)g_gameDllBase + OFF_124E_UI_TICK;
-				FunHook((void *)pUiTick, (void *)MyUiTick, (void *&)g_oUiTick);
+				pUiTick = (DWORD)g_gameDllBase + OFF_124E_UI_TICK;
 			}
 
 			if (ver == Version::v127a && g_showSystemInfo)
 			{
-				DWORD pUiTick = (DWORD)g_gameDllBase + OFF_127A_UI_TICK;
+				pUiTick = (DWORD)g_gameDllBase + OFF_127A_UI_TICK;
+			}
+
+			if (pUiTick)
+			{
 				FunHook((void *)pUiTick, (void *)MyUiTick, (void *&)g_oUiTick);
 			}
 		}
@@ -370,7 +369,7 @@ void HookCooldown()
 		return;
 	}
 
-	FunHook((void *)pPreSetCooldown, (void *)SetCdForAddr, (void *&)g_oRealFunc);
+	// FunHook((void *)pPreSetCooldown, (void *)SetCdForAddr, (void *&)g_oRealFunc);
 	FunHook((void *)pCdSweepTick, (void *)MyCdSweepTick, (void *&)g_oCdSweepTick);
 
 	g_hookCoolDown = true;
@@ -404,7 +403,7 @@ void UnHookCooldown()
 	UnFunHook((void *)g_oIsDrawSkillPanelOverlay, (void *)MyIsDrawSkillPanelOverlay);
 	UnFunHook((void *)g_oIsNeedDrawUnit2, (void *)MyIsNeedDrawUnit2);
 #endif
-	UnFunHook((void *)g_oRealFunc, (void *)SetCdForAddr);
+	// UnFunHook((void *)g_oRealFunc, (void *)SetCdForAddr);
 	g_ButtonQueue.clear(); // 已废弃，清空以防万一
 }
 
@@ -578,7 +577,7 @@ void __fastcall MyCdSweepTick(int *a1, float *a2, int a3)
 		{
 			float remaining = 0.0f;
 			// 无 CD 或只剩尾巴（<0.05s）时传 0 隐藏，避免出现 "0.00"/"0.01"
-			if (GetButtonRemainingCd(cmdbt, &remaining))
+			if (GetButtonRemainingCd(cmdbt, &remaining) && remaining > 0.05f)
 			{
 				WfeCooldownUpdate(cmdbt, remaining);
 			}

@@ -42,8 +42,19 @@ extern LPVOID g_gameDllBase;
 // WFE COOLDOWNUI 配置节默认值
 #define WFE_TEXT_COLOUR (-1)		  // 0xFFFFFFFF 白色
 #define WFE_SHADOW_COLOUR (-16777216) // 0xFF000000 黑色
-#define WFE_TEXT_SIZE 0.020f		  // TEXTSIZE，WFE 里是 百分比/100
+#define WFE_TEXT_SIZE 0.017f		  // TEXTSIZE，WFE 里是 百分比/100
 #define WFE_JUSTIFY 7
+
+//==================== 屏幕固定文本（系统信息）====================
+// war3 UI 坐标：左上角 (0,0)，右下角约 (0.8,0.6)；y 轴向上，所以往下用负值
+#define SYS_FRAME_POINT 0 // TOPLEFT
+#define SYS_FRAME_X 0.048f
+#define SYS_FRAME_Y (-0.031f)
+#define SYS_FRAME_SIZE 0.014f
+#define SYS_FRAME_COLOUR (-16777216) // 0xFF000000 黑色
+// #define SYS_FRAME_COLOUR ((int)0xFFEFB60B) // 橙黄色
+
+static void *g_sysText = nullptr;
 
 using FnTfCtor = void *(__thiscall *)(void *mem, void *parent, int a3, int a4);
 using FnTfSetText = void *(__thiscall *)(void *frame, const char *text);
@@ -263,16 +274,6 @@ void WfeCooldownUpdate(CCommandButton *btn, float remain)
 	}
 }
 
-//==================== 屏幕固定文本（系统信息）====================
-// war3 UI 坐标：左上角 (0,0)，右下角约 (0.8,0.6)；y 轴向上，所以往下用负值
-#define SYS_FRAME_POINT 0 // TOPLEFT
-#define SYS_FRAME_X 0.048f
-#define SYS_FRAME_Y (-0.041f)
-#define SYS_FRAME_SIZE 0.014f
-#define SYS_FRAME_COLOUR ((int)0xFFEFB60B) // 橙黄色，与原 D3D 绘制一致
-
-static void *g_sysText = nullptr;
-
 // 建一个挂在 CGameUI 上、锚在屏幕左上角的文本
 static void *CreateScreenText()
 {
@@ -294,7 +295,10 @@ static void *CreateScreenText()
 	}
 
 	const char *fontName = g_skinGetString("MasterFont", nullptr);
-	g_tfSetFont(tf, fontName ? fontName : "MasterFont", SYS_FRAME_SIZE, 0);
+	if (g_tfSetFont)
+	{
+		g_tfSetFont(tf, fontName ? fontName : "MasterFont", SYS_FRAME_SIZE, 0);
+	}
 
 	// 锚到 CGameUI 的左上角（layout 子对象在 +180）
 	void *rel = (void *)(gameUI + WFE_LAYOUT_PART);
@@ -309,7 +313,7 @@ static void *CreateScreenText()
 	g_tfShow(tf, 1);
 	g_tfWrap(tf, 1);
 	float shadow[2] = {0.0016f, -0.0016f};
-	g_tfSetColor(tf, WFE_SHADOW_COLOUR, shadow);
+	g_tfSetColor(tf, SYS_FRAME_COLOUR, shadow);
 	g_tfSetJustify(tf, WFE_JUSTIFY);
 
 	return tf;
