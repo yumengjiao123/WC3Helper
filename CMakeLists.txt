@@ -41,7 +41,8 @@ set(MAIN_SOURCES
 	plugins/ChatCommand.cpp
 	plugins/unitcommand.cpp
 	plugins/CoolDownDraw.cpp
-	plugins/CoolDownDrawD3D9.cpp
+	# plugins/CoolDownNative.cpp
+	plugins/WfeCooldown.cpp
 )
 
 # 创建WC3Helper DLL
@@ -56,12 +57,6 @@ target_include_directories(WC3Helper PUBLIC
 target_link_libraries(WC3Helper PRIVATE
 	Version 
 	detours
-	d3d8
-    d3dx8
-	d3d9
-	d3dx9
-	opengl32
-	freetype28
 	legacy_stdio_definitions.lib
 )
 
@@ -72,8 +67,8 @@ set_target_properties(WC3Helper PROPERTIES
 	LINK_FLAGS "/SAFESEH:NO"
     # RUNTIME_OUTPUT_DIRECTORY ${CMAKE_HOME_DIRECTORY}/bin
 	# RUNTIME_OUTPUT_DIRECTORY "D:/Games/Warcraft III/"
-	# RUNTIME_OUTPUT_DIRECTORY_DEBUG   "E:/games/Warcraft III/"
-	# RUNTIME_OUTPUT_DIRECTORY_RELEASE "E:/games/Warcraft III/"
+	RUNTIME_OUTPUT_DIRECTORY_DEBUG   "E:/games/Warcraft III/"
+	RUNTIME_OUTPUT_DIRECTORY_RELEASE "E:/games/Warcraft III/"
 	SUFFIX ".mix"
 	# OUTPUT_NAME "strom80"
 )

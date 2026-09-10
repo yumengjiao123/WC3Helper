@@ -395,8 +395,8 @@ struct CCommandButtonData
 	unsigned int unk5B4;		// 0x5B4
 	unsigned int unk5B8;		// 0x5B8 英雄技能是1 物品是0
 	unsigned int unk5BC;		// 0x5BC 英雄技能是1 物品是0
-	unsigned int unk5C0;		// 0x5C0 英雄技能是0 物品是1
-	unsigned int unk5C4;		// 0x5C4 英雄技能是0 物品是1
+	unsigned int numberValue;	// 0x5C0 数字层显示的数字（物品使用次数），SetNumber 写入
+	unsigned int numberShown;	// 0x5C4 游戏是否想显示数字层（物品数量），ShowNumberOverlay 写入
 	char iconPath[0x100];		// 0x5C8 长度正确？
 	unsigned int unk6C8;		// 0x6C8
 	unsigned int unk6CC;		// 0x6CC
@@ -411,7 +411,12 @@ struct CCommandButton
 	CSimpleButton baseSimpleButton; // 0x0
 	unsigned char unk168[0x28];
 	CCommandButtonData* commandButtonData; // 0x190
-	unsigned char unk194[0x2C];
+	// 下面几个由 CCommandButton 懒创建：
+	void* numberOverlayFrame;	// 0x194 数字层 CSimpleFrame*（游戏用它显示物品使用次数）
+	void* numberFontString;		// 0x198 数字层文本 CSimpleFontString*
+	void* cdSweepFrame;			// 0x19C CD 扫光 CSpriteFrame*（432 字节，sub_6F3381A0 创建；CD 结束只隐藏不销毁）
+	void* cdSweepController;	// 0x1A0 CD 扫光控制器*（296 字节，sub_6F337E70 里 Hide）
+	unsigned char unk1A4[0x1C];	// 0x1A4 float 1.0；0x1A8 自动施法 CSpriteFrame*；0x1AC 自动施法控制器*
 }; // sizeof = 0x1C0
 
 #pragma pack(pop)

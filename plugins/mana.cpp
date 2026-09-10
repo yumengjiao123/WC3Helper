@@ -30,6 +30,7 @@ GADDRESS a16FF58; // 35A740 6f35A740
 GADDRESS a16FF20; // 32D300   6f
 ADDRESS a16F088;  // storm 0x191 #401
 GADDRESS a2C7F10;
+GADDRESS a16FF54; // SetColor(renderObj, [B,G,R,A])：写入渲染对象 +104..107 并刷新
 // as data
 ADDRESS a16F08C;
 ADDRESS a16F004;
@@ -52,6 +53,12 @@ double a1649D0 = 0.004000000;			// 蓝条的高度，默认0.004
 double a1649CC = 0.3000000;				// double a1649CC = 0.3000000;
 
 int ManabarEnabled = false;
+
+// 蓝条颜色（ARGB 格式：0xAARRGGBB），默认纯蓝 0xFF0000FF。
+// 在 FillMemoryForMPBar 构造条时应用一次（每帧绘制不会重置），
+// 修改后对之后新创建的条生效。
+// 示例：0xFF00E5EE 蓝绿 / 0xFFFF8C00 橙 / 0xFF8A2BE2 紫罗兰 / 0xFFFFFF00 黄
+DWORD g_manaBarColor = 0xFFFFFF00;
 
 void printInt(int addr)
 {
@@ -77,7 +84,17 @@ void __declspec(naked) FillMemoryForMPBar()
 		push    0
 		xor edx, edx
 		mov     ecx, esi
-		call    a16FF58 // ds:[0016FF58]=6F35A740 (Game.6F35A740)
+		call    a16FF58 // ds:[0016FF58]=6F35A740 (Game.6F35A740) CStatBar 构造，type 0 = 蓝色
+		// 用 g_manaBarColor 覆盖默认蓝色（SetColor: ecx=渲染对象[CStatBar+308], 参数=&颜色）
+		mov     eax, a16FF54
+		test    eax, eax
+		je      L_noColor
+		mov     ecx, dword ptr[esi + 308]
+		test    ecx, ecx
+		je      L_noColor
+		push    offset g_manaBarColor
+		call    eax
+		L_noColor :
 		fld     a1649D4 // ds:[001649D4]=0.03000000
 		push    0
 		fstp    dword ptr[esi + 0x58]
@@ -195,8 +212,8 @@ void __declspec(naked) f00152710()
 			add     eax, 0x68
 			lea     ebx, f152980
 			mov     dword ptr[eax], ebx
-																																		// mov     dword ptr [a16F008+0X6c], f152950
-																																		// mov     dword ptr [a16F008+0X70], f152980
+			// mov     dword ptr [a16F008+0X6c], f152950
+			// mov     dword ptr [a16F008+0X70], f152980
 			pop ebx
 			pop eax
 			retn
@@ -391,7 +408,6 @@ void Unhook()
 	}
 }
 
-// #include <stdio.h>
 BOOL WINAPI ShowManaBar(LPVOID gameDllBase, LPVOID hMod, bool ShowMana)
 {
 	*(int *)&a3000AC = 1;
@@ -414,12 +430,15 @@ BOOL WINAPI ShowManaBar(LPVOID gameDllBase, LPVOID hMod, bool ShowMana)
 		*(int *)&a16FF58 = (int)gameDllBase + 0x35A800; // 0x6f35A800
 		*(int *)&a16FF20 = (int)gameDllBase + 0x32D3C0; // 0x32D3C0
 		*(int *)&a2C7F10 = (int)gameDllBase + 0x2C7FD0; // 0x6f2C7FD0//0x32C650
+		*(int *)&a16FF54 = (int)gameDllBase + 0x60EEE0; // sub_6F60EEE0 SetColor
 
 		*(int *)&Storm_401_org_malloc = (int)gameDllBase + 0x37A623; // 0x6f37A623
 		*(int *)&HPMP_DRAW = (int)gameDllBase + 0x37AA28;			 // 0x6F37AA28
 	}
 	else if (ver == Version::v124b)
 	{
+		// 注意：124b/126a 的 SetColor 地址未确认（a16FF54 保持 NULL），
+		// 颜色覆盖自动跳过，蓝条保持默认纯蓝
 		*(int *)&g16FF24 = (int)gameDllBase + 0x27B950; // 6f27B950
 		*(int *)&g16FF68 = (int)gameDllBase + 0x334C00; // 6f334C00
 		*(int *)&a16FF64 = (int)gameDllBase + 0x6068A0; // 6f606860
@@ -453,6 +472,7 @@ BOOL WINAPI ShowManaBar(LPVOID gameDllBase, LPVOID hMod, bool ShowMana)
 		*(int *)&a16FF58 = (int)gameDllBase + 0x383F60; //
 		*(int *)&a16FF20 = (int)gameDllBase + 0x327020; //
 		*(int *)&a2C7F10 = (int)gameDllBase + 0x6374A0; //
+		*(int *)&a16FF54 = (int)gameDllBase + 0xBFA30; // sub_6F0BFA30 SetColor
 
 		*(int *)&Storm_401_org_malloc = (int)gameDllBase + 0x374F14; //
 		*(int *)&HPMP_DRAW = (int)gameDllBase + 0x3784CA;			 //
