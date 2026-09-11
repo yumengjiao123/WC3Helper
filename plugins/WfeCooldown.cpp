@@ -44,6 +44,7 @@ extern LPVOID g_stormDllBase;
 #define WFE_TEXT_COLOUR (-1)		  // 0xFFFFFFFF 白色
 #define WFE_SHADOW_COLOUR (-16777216) // 0xFF000000 黑色
 #define WFE_TEXT_SIZE 0.017f		  // TEXTSIZE，WFE 里是 百分比/100
+#define WFE_TEXT_SIZE 0.017f		  // TEXTSIZE，WFE 里是 百分比/100
 #define WFE_JUSTIFY 7
 
 // --- 屏幕固定文本（系统信息）的锚点与样式 ---
@@ -315,7 +316,10 @@ static void *CreateScreenText()
 	}
 
 	const char *fontName = g_skinGetString("MasterFont", nullptr);
-	g_tfSetFont(tf, fontName ? fontName : "MasterFont", SYS_FRAME_SIZE, 0);
+	if (g_tfSetFont)
+	{
+		g_tfSetFont(tf, fontName ? fontName : "MasterFont", SYS_FRAME_SIZE, 0);
+	}
 
 	// 锚到 CGameUI 的左上角（layout 子对象在 +180）
 	void *rel = (void *)(gameUI + WFE_LAYOUT_PART);
@@ -330,7 +334,7 @@ static void *CreateScreenText()
 	g_tfShow(tf, 1);
 	g_tfWrap(tf, 1);
 	float shadow[2] = {0.0016f, -0.0016f};
-	g_tfSetColor(tf, WFE_SHADOW_COLOUR, shadow);
+	g_tfSetColor(tf, SYS_FRAME_COLOUR, shadow);
 	g_tfSetJustify(tf, WFE_JUSTIFY);
 
 	return tf;
