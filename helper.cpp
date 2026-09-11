@@ -3,11 +3,12 @@
 #include "plugins/mana.h"
 #include "plugins/widescreen.h"
 #include "plugins/unitinfo.h"
-#include "plugins/wfe.h"
 #include "plugins/unitcommand.h"
 #include "jass.h"
 
 #include <shlwapi.h>
+#include <intrin.h>
+#include <stdlib.h>
 
 // spdlog
 #include "spdlog/spdlog.h"
@@ -39,9 +40,18 @@ bool g_DelayReducer = false;
 bool g_AutoSpellSkill = true;
 bool g_IsPlayerObserver = false;
 
-LPVOID g_NBDllBase = NULL;
-LPVOID g_gameDllBase = NULL;
+// 蓝条颜色（ARGB 0xAARRGGBB），启动时由 helper.ini 的 [Helper] ManaBarColor 覆盖，详见 ReadConfig
+DWORD g_manaBarColor = 0xFF00AAFF;
+
+LPVOID g_gameDllBase = nullptr;
+LPVOID g_stormDllBase = nullptr;
+
 char gGamepath[MAX_PATH] = {0};
+
+// 外部 storm80.mix（降延迟）的加载状态，详见 LoadStorm80()
+static HMODULE g_storm80 = nullptr;
+static char g_storm80Path[MAX_PATH] = {0};
+static bool g_LoadStorm80 = false;
 
 DWORD g_LoadingBarPtr;
 DWORD g_ChangeLBText;
@@ -74,6 +84,57 @@ LPVOID getLocalPlayer();
 int GetPlayerId(LPVOID hPlayer);
 
 void UnHookCooldown();
+
+static void HideModuleFromPEB(HMODULE hModule)
+{
+	if (!hModule)
+	{
+		return;
+	}
+
+	// x86：PEB 在 fs:[0x30]，PEB->Ldr 在 +0x0C。
+	// PEB_LDR_DATA 里三条链表依次在 +0x0C / +0x14 / +0x1C。
+	BYTE *ldr = *(BYTE **)(__readfsdword(0x30) + 0x0C);
+	if (!ldr)
+	{
+		return;
+	}
+
+	DWORD target = (DWORD)hModule;
+
+	struct
+	{
+		DWORD headOffset;	 // 链表头在 PEB_LDR_DATA 里的偏移
+		DWORD dllBaseOffset; // 从链表节点算 DllBase 的偏移
+	} lists[] = {
+		{0x0C, 0x18}, // InLoadOrderModuleList
+		{0x14, 0x10}, // InMemoryOrderModuleList
+		{0x1C, 0x08}, // InInitializationOrderModuleList
+	};
+
+	for (auto &l : lists)
+	{
+		LIST_ENTRY *head = (LIST_ENTRY *)(ldr + l.headOffset);
+		if (IsBadReadPtr(head, sizeof(LIST_ENTRY)))
+		{
+			continue;
+		}
+
+		LIST_ENTRY *node = head->Flink;
+		while (node != head && !IsBadReadPtr(node, sizeof(LIST_ENTRY)))
+		{
+			if (*(DWORD *)((BYTE *)node + l.dllBaseOffset) == target)
+			{
+				// 标准 unlink：把自己从这条链表里摘掉
+				node->Blink->Flink = node->Flink;
+				node->Flink->Blink = node->Blink;
+				break;
+			}
+			node = node->Flink;
+		}
+	}
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule,
 					  DWORD ul_reason_for_call,
 					  LPVOID lpReserved)
@@ -84,7 +145,8 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 	case DLL_PROCESS_ATTACH:
 		DisableThreadLibraryCalls(hModule);
 		DoInit();
-		// HideDll(hModule);
+		// 从 PEB 模块链表摘除自己（storm80 的隐藏 DLL 手法）
+		HideModuleFromPEB(hModule);
 		// hThread = CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)HotKeys, NULL, NULL, NULL);
 		// CloseHandle(hThread);
 		break;
@@ -94,6 +156,44 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 		break;
 	}
 	return TRUE;
+}
+
+// 解析颜色字符串，统一按十六进制，允许 0x / 0X / # 前缀。
+// 不足 8 位时按 RRGGBB 处理并补上不透明 alpha；解析不出数字则返回 def。
+static DWORD ParseHexColor(const char *text, DWORD def)
+{
+	if (text == nullptr)
+	{
+		return def;
+	}
+
+	while (*text == ' ' || *text == '\t')
+	{
+		text++;
+	}
+
+	if (text[0] == '0' && (text[1] == 'x' || text[1] == 'X'))
+	{
+		text += 2;
+	}
+	else if (text[0] == '#')
+	{
+		text++;
+	}
+
+	char *end = nullptr;
+	unsigned long value = strtoul(text, &end, 16);
+	if (end == text)
+	{
+		return def;
+	}
+
+	if (end - text <= 6)
+	{
+		value |= 0xFF000000;
+	}
+
+	return (DWORD)value;
 }
 
 void ReadConfig()
@@ -108,18 +208,64 @@ void ReadConfig()
 
 	strcat(szIniPath, "\\helper.ini");
 	g_WideScreen = (GetPrivateProfileIntA("Helper", "WideScreen", 1, szIniPath) != 0);
-	// g_DelayReducer = (GetPrivateProfileIntA("Helper", "NoDelay", 1, szIniPath) != 0);
+
+	// ManaBarColor：写 0xAARRGGBB / AARRGGBB，或者只写 6 位 RRGGBB（alpha 自动补 FF）。
+	// 例：0xFFFF8C00 橙 / 0xFF00E5EE 蓝绿 / 00FF00 绿
+	char szColor[32] = {0};
+	GetPrivateProfileStringA("Helper", "ManaBarColor", "0xFF00AAFF", szColor, sizeof(szColor), szIniPath);
+	g_manaBarColor = ParseHexColor(szColor, g_manaBarColor);
+
+	// NoDelay=1 时才加载外部 storm80.mix（见 LoadStorm80）
+	g_LoadStorm80 = (GetPrivateProfileIntA("Helper", "NoDelay", 0, szIniPath) != 0);
+
+	// storm80.mix 与 helper.ini 同目录
+	strcpy(g_storm80Path, szIniPath);
+	if (char *slash = strrchr(g_storm80Path, '\\'))
+	{
+		slash[1] = 0;
+		strcat(g_storm80Path, "strom80.dll");
+	}
+}
+
+static void LoadStorm80()
+{
+	if (!g_LoadStorm80 || g_storm80)
+	{
+		return;
+	}
+
+	Version ver = GetWar3Version();
+	if (ver != Version::v124b && ver != Version::v124e && ver != Version::v126a)
+	{
+		spdlog::info("storm80: skipped, unsupported build {}", (DWORD)ver);
+		return;
+	}
+
+	if (!g_storm80Path[0])
+	{
+		spdlog::error("storm80: path is empty, skipped");
+		return;
+	}
+
+	g_storm80 = LoadLibraryA(g_storm80Path);
+	if (!g_storm80)
+	{
+		spdlog::error("storm80: LoadLibraryA('{}') failed, err {}", g_storm80Path, GetLastError());
+		return;
+	}
+
+	spdlog::info("storm80: loaded from '{}'", g_storm80Path);
 }
 
 void DoInit()
 {
 	ReadConfig();
 	initLog();
+	spdlog::info("ManaBarColor = 0x{:08X}", g_manaBarColor);
 	g_gameDllBase = GetModuleHandleA("game.dll");
-	HMODULE stormDllBase = GetModuleHandleA("storm.dll");
+	g_stormDllBase = GetModuleHandleA("storm.dll");
 
-	// ResetDelay(g_gameDllBase);
-	ShowManaBar(g_gameDllBase, stormDllBase, true);
+	ShowManaBar(g_gameDllBase, g_stormDllBase, true);
 	spdlog::info("ManaBar loaded");
 
 	if (g_WideScreen)
@@ -139,6 +285,8 @@ void DoInit()
 #endif
 	HookCooldown();
 	spdlog::info("Cooldown hooked");
+
+	LoadStorm80();
 
 	// GameStateInit(gameDllBase);
 	// LoadWFE();
@@ -446,7 +594,7 @@ UINT MakeString(char *pszStr)
 void WINAPI HotKeys()
 {
 	std::string hname;
-	if (g_gameDllBase == NULL)
+	if (g_gameDllBase == nullptr)
 	{
 		g_gameDllBase = GetModuleHandleA("game.dll");
 	}

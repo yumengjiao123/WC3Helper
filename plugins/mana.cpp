@@ -4,16 +4,9 @@
 // #include "pch.h"
 #include "common.h"
 #include "mana.h"
-// #include "LDE64.h"
-// #pragma comment(lib,"LDE64.lib")
 
 #include "spdlog/spdlog.h"
 
-#pragma comment(linker, "/MERGE:.rdata=.text")
-#pragma comment(linker, "/MERGE:.data=.text")
-#pragma comment(linker, "/MERGE:code=.text")
-#pragma comment(linker, "/SECTION:.text,RWE")
-#pragma optimize("gsy", on)
 #ifdef _MANAGED
 #pragma managed(push, off)
 #endif
@@ -54,11 +47,12 @@ double a1649CC = 0.3000000;				// double a1649CC = 0.3000000;
 
 int ManabarEnabled = false;
 
-// 蓝条颜色（ARGB 格式：0xAARRGGBB），默认纯蓝 0xFF0000FF。
+// 蓝条颜色（ARGB 格式：0xAARRGGBB），定义在 helper.cpp，启动时由
+// helper.ini 的 [Helper] ManaBarColor 读取
 // 在 FillMemoryForMPBar 构造条时应用一次（每帧绘制不会重置），
 // 修改后对之后新创建的条生效。
 // 示例：0xFF00E5EE 蓝绿 / 0xFFFF8C00 橙 / 0xFF8A2BE2 紫罗兰 / 0xFFFFFF00 黄
-DWORD g_manaBarColor = 0xFFFFFF00;
+extern DWORD g_manaBarColor;
 
 void printInt(int addr)
 {

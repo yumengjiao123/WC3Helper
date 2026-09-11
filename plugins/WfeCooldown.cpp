@@ -7,9 +7,10 @@
 #include <cmath>
 
 extern LPVOID g_gameDllBase;
+extern LPVOID g_stormDllBase;
 
-//==================== 偏移表 ====================
-// 1.27a
+//==================== 宏定义区 ====================
+// --- 函数偏移：1.27a ---
 #define O127_CTOR 0x0A9000		// sub_6F0A9000  CTextFrame 构造器
 #define O127_SETTEXT 0x0AA130	// sub_6F0AA130  SetText
 #define O127_SETFONT 0x09CE60	// sub_6F09CE60  SetFont
@@ -22,7 +23,7 @@ extern LPVOID g_gameDllBase;
 #define O127_SKINSTR 0x324AD0	// sub_6F324AD0  取字体名
 #define O127_GAMEUI 0xBE6350	// CGameUI 全局单例指针所在地址
 
-// 1.24e（函数与 1.27a 一一对应，地址不同）
+// --- 函数偏移：1.24e（与 1.27a 一一对应，地址不同）---
 #define O124_CTOR 0x6127A0		// sub_6F6127A0
 #define O124_SETTEXT 0x6124E0	// sub_6F6124E0
 #define O124_SETFONT 0x5FC100	// sub_6F5FC100
@@ -39,11 +40,19 @@ extern LPVOID g_gameDllBase;
 #define WFE_LAYOUT_PART 180 // layout 子对象偏移（SetAllPoints 用 frame+180）
 #define WFE_TEXT_BUF 0x1E8	// +488：当前文本指针（NULL = 空）
 
-// WFE COOLDOWNUI 配置节默认值
+// --- WFE COOLDOWNUI 配置节默认值 ---
 #define WFE_TEXT_COLOUR (-1)		  // 0xFFFFFFFF 白色
 #define WFE_SHADOW_COLOUR (-16777216) // 0xFF000000 黑色
-#define WFE_TEXT_SIZE 0.020f		  // TEXTSIZE，WFE 里是 百分比/100
+#define WFE_TEXT_SIZE 0.017f		  // TEXTSIZE，WFE 里是 百分比/100
 #define WFE_JUSTIFY 7
+
+// --- 屏幕固定文本（系统信息）的锚点与样式 ---
+// war3 UI 坐标：左上角 (0,0)，右下角约 (0.8,0.6)；y 轴向上，所以往下用负值
+#define SYS_FRAME_POINT 0 // TOPLEFT
+#define SYS_FRAME_X 0.048f
+#define SYS_FRAME_Y (-0.041f)
+#define SYS_FRAME_SIZE 0.014f
+#define SYS_FRAME_COLOUR (-16777216)
 
 using FnTfCtor = void *(__thiscall *)(void *mem, void *parent, int a3, int a4);
 using FnTfSetText = void *(__thiscall *)(void *frame, const char *text);
@@ -76,19 +85,38 @@ bool g_useWfeCooldown = false;
 // 无法遍历找回，只能缓存。
 static std::unordered_map<DWORD, void *> g_frames;
 
+// 屏幕左上角的系统信息文本（同样挂在 CGameUI 下）
+static void *g_sysText = nullptr;
+
+// 创建这些文本时依附的 CGameUI 实例。
+// 游戏 UI 会随"结束任务 / 回主菜单"销毁重建，挂在旧 CGameUI 下的 CTextFrame
+// 会被一起释放。不检查就会在 UI 换过之后继续写已释放内存（结束任务时崩溃）。
+static DWORD g_boundGameUI = 0;
+
+// 校验当前游戏 UI 是否还是创建这些文本时的那个实例。
+// 换过（或当前没有 UI）就把所有缓存指针整批作废。
+// 返回 0 表示此刻不能安全操作任何文本。
+static DWORD AcquireGameUI()
+{
+	DWORD cur = g_gameUiAddr ? *(DWORD *)g_gameUiAddr : 0;
+	if (cur != g_boundGameUI)
+	{
+		// 旧 CGameUI 已析构（或正在析构），挂在它下面的 CTextFrame 全部失效
+		g_frames.clear();
+		g_sysText = nullptr;
+		g_boundGameUI = cur;
+	}
+	return cur;
+}
+
 bool WfeCooldownInit(Version ver)
 {
-	if (!g_gameDllBase)
+	if (!g_gameDllBase || !g_stormDllBase)
 	{
 		return false;
 	}
 
-	HMODULE hStorm = GetModuleHandleA("Storm.dll");
-	if (!hStorm)
-	{
-		return false;
-	}
-	g_sMemAlloc = (FnSMemAlloc)GetProcAddress(hStorm, (LPCSTR)401);
+	g_sMemAlloc = (FnSMemAlloc)GetProcAddress((HMODULE)g_stormDllBase, (LPCSTR)401);
 	if (!g_sMemAlloc)
 	{
 		return false;
@@ -218,7 +246,7 @@ static void *GetFrame(CCommandButton *btn)
 
 void WfeCooldownUpdate(CCommandButton *btn, float remain)
 {
-	if (!btn || !WfeCooldownAvailable())
+	if (!btn || !WfeCooldownAvailable() || !AcquireGameUI())
 	{
 		return;
 	}
@@ -264,14 +292,7 @@ void WfeCooldownUpdate(CCommandButton *btn, float remain)
 }
 
 //==================== 屏幕固定文本（系统信息）====================
-// war3 UI 坐标：左上角 (0,0)，右下角约 (0.8,0.6)；y 轴向上，所以往下用负值
-#define SYS_FRAME_POINT 0 // TOPLEFT
-#define SYS_FRAME_X 0.048f
-#define SYS_FRAME_Y (-0.041f)
-#define SYS_FRAME_SIZE 0.014f
-#define SYS_FRAME_COLOUR ((int)0xFFEFB60B) // 橙黄色，与原 D3D 绘制一致
-
-static void *g_sysText = nullptr;
+// 位置/样式宏见文件顶部「宏定义区」
 
 // 建一个挂在 CGameUI 上、锚在屏幕左上角的文本
 static void *CreateScreenText()
@@ -317,7 +338,7 @@ static void *CreateScreenText()
 
 void WfeSystemTextUpdate(const char *text)
 {
-	if (!WfeCooldownAvailable())
+	if (!WfeCooldownAvailable() || !AcquireGameUI())
 	{
 		return;
 	}
@@ -354,24 +375,35 @@ void WfeSystemTextUpdate(const char *text)
 
 void WfeCooldownShutdown()
 {
-	for (auto &kv : g_frames)
+	// 只有游戏 UI 还是我们建这些文本时的那个实例、且地址本身还可读，
+	// 才能安全地去清空文本；否则那些指针早就随旧 CGameUI 一起释放了。
+	DWORD cur = 0;
+	if (g_gameUiAddr && !IsBadReadPtr((void *)g_gameUiAddr, 4))
 	{
-		void *tf = kv.second;
-		if (tf && !IsBadReadPtr(tf, 0x10) && *(const char **)((BYTE *)tf + WFE_TEXT_BUF))
-		{
-			g_tfSetText(tf, nullptr);
-		}
+		cur = *(DWORD *)g_gameUiAddr;
 	}
-	g_frames.clear();
 
-	if (g_sysText && !IsBadReadPtr(g_sysText, 0x10))
+	if (cur && cur == g_boundGameUI)
 	{
-		if (*(const char **)((BYTE *)g_sysText + WFE_TEXT_BUF))
+		for (auto &kv : g_frames)
+		{
+			void *tf = kv.second;
+			if (tf && !IsBadReadPtr(tf, 0x10) && *(const char **)((BYTE *)tf + WFE_TEXT_BUF))
+			{
+				g_tfSetText(tf, nullptr);
+			}
+		}
+
+		if (g_sysText && !IsBadReadPtr(g_sysText, 0x10) &&
+			*(const char **)((BYTE *)g_sysText + WFE_TEXT_BUF))
 		{
 			g_tfSetText(g_sysText, nullptr);
 		}
 	}
+
+	g_frames.clear();
 	g_sysText = nullptr;
+	g_boundGameUI = 0;
 
 	g_useWfeCooldown = false;
 }

@@ -43,14 +43,13 @@ std::vector<CCommandButton *> g_ButtonQueue;
 #define GRID_NUM_ROWS 292
 #define GRID_ROW_ARRAY 340
 
+// CD 扫光回调（CD 期间每帧驱动一次）
 #define OFF_127A_CD_SWEEP_TICK 0x38FDD0
-
-// 游戏 UI 的每帧动画 tick（1.27a: sub_6F18F030）。
-// 它遍历某个 UI 元素的控制器列表逐个推进，游戏内每帧都会走到，
-// 属于游戏自身的界面更新流程，与渲染后端无关。
+// 游戏 UI 的每帧动画 tick。它遍历某个 UI 元素的控制器列表逐个推进，
+// 游戏内每帧都会走到，属于游戏自身的界面更新流程，与渲染后端无关。
 // 屏幕左上角的系统信息就挂在这里刷新，彻底取代 EndScene / wglSwapLayerBuffers。
-#define OFF_127A_UI_TICK 0x18F030
-#define OFF_124E_UI_TICK 0x4E90A0
+#define OFF_127A_UI_TICK 0x18F030 // 1.27a: sub_6F18F030
+#define OFF_124E_UI_TICK 0x4E90A0 // 1.24e: sub_6F4E90A0（与 1.27a 同构）
 
 bool g_hookCoolDown = false;
 Version ver = Version::unknown;
@@ -144,26 +143,6 @@ void __fastcall MyUiTick(void *pThis, void *edx, int dt)
 	}
 }
 
-int PlantDetourJMP(unsigned char *source, const unsigned char *destination, size_t length)
-{
-
-	unsigned long oldProtection;
-	bool bRet = VirtualProtect(source, length, PAGE_EXECUTE_READWRITE, &oldProtection);
-
-	if (bRet == false)
-		return false;
-
-	source[0] = 0xE9;
-	*(unsigned long *)(source + 1) = (unsigned long)(destination - source) - 5;
-
-	for (unsigned int i = 5; i < length; i++)
-		source[i] = 0x90;
-
-	VirtualProtect(source, length, oldProtection, &oldProtection);
-	FlushInstructionCache(GetCurrentProcess(), source, length);
-	return true;
-}
-
 std::string GetAbilityFourCC(DWORD abilityID)
 {
 	std::string ccid = "0000";
@@ -172,12 +151,6 @@ std::string GetAbilityFourCC(DWORD abilityID)
 	ccid[1] = abilityID >> 16 & 0xFF;
 	ccid[0] = abilityID >> 24 & 0xFF;
 	return ccid;
-}
-
-int JumpBackAddr7()
-{
-	MessageBoxA(0, 0, 0, 7);
-	return 0;
 }
 
 int __fastcall MyIsDrawSkillPanel(unsigned char *UnitAddr, int addr1)
@@ -408,6 +381,27 @@ void UnHookCooldown()
 	g_ButtonQueue.clear(); // 已废弃，清空以防万一
 }
 
+// 校验按钮指针是否仍是有效的 CCommandButton。
+// 参考 kkapi 的 KKCommandGetCooldownModel：拿到按钮指针后先比 vtable
+// （`*a1 != game.dll + vftable偏移` 就直接返回 0），不信任任何缓存下来的按钮。
+// 按钮会随 UI 刷新 / 结束任务重建，继续用旧指针会读到已释放内存。
+bool IsValidCommandButton(const void *btn)
+{
+	if (!btn || IsBadReadPtr(btn, 4) || !g_gameDllBase)
+	{
+		return false;
+	}
+
+	if (ver == Version::unknown)
+	{
+		ver = GetWar3Version();
+	}
+
+	DWORD vftOff = (ver == Version::v127a) ? OFFSET_127A_COMMANDBUTTON_VFTABLE
+										   : OFFSET_124E_COMMANDBUTTON_VFTABLE;
+	return *(const DWORD *)btn == (DWORD)g_gameDllBase + vftOff;
+}
+
 // 取按钮当前技能/物品的剩余 CD（单位技能与物品自带技能通用）。
 //   物品自带技能(flag2&0x600==0x200)走 abi+0xDC；
 //   普通技能按 orderId 在 abi+0xCC 的命令表里找索引，
@@ -417,7 +411,7 @@ void UnHookCooldown()
 static bool GetButtonRemainingCd(CCommandButton *cmdbt, float *remain)
 {
 	*remain = 0.0f;
-	if (!cmdbt || !cmdbt->commandButtonData)
+	if (!IsValidCommandButton(cmdbt) || !cmdbt->commandButtonData)
 	{
 		return false;
 	}
@@ -459,6 +453,7 @@ double __fastcall SetCdForAddr(DWORD pThis, int dummy)
 bool CollectCommandButtons(std::vector<CCommandButton *> &out)
 {
 	out.clear();
+	out.reserve(24); // 12 技能 + 6 物品，留余量避免反复扩容
 	if (!g_gameDllBase)
 	{
 		return false;
@@ -546,7 +541,8 @@ void __fastcall MyCdDisplayReset(DWORD pThis, DWORD dummyEdx)
 		g_oRealCdDisplayReset(pThis, dummyEdx);
 	}
 
-	if (!pThis || !g_useWfeCooldown)
+	// pThis 在按钮析构时也会走到这里，此时 vtable 已经换了；校验不过就不碰它
+	if (!pThis || !g_useWfeCooldown || !IsValidCommandButton((const void *)pThis))
 	{
 		return;
 	}
@@ -567,25 +563,26 @@ void __fastcall MyCdSweepTick(int *a1, float *a2, int a3)
 	if (g_oCdSweepTick)
 		g_oCdSweepTick(a1, a2, a3);
 
-	if (g_ButtonQueue.empty() && !CollectCommandButtons(g_ButtonQueue))
+	if (!a1 || !g_useWfeCooldown)
 	{
 		return;
 	}
 
-	if (a1 && g_useWfeCooldown)
+	// 每次都重新枚举：按钮会随 UI 刷新 / 结束任务重建，
+	// 沿用上一帧缓存的指针会在按钮销毁后读到已释放内存。
+	CollectCommandButtons(g_ButtonQueue);
+
+	for (auto cmdbt : g_ButtonQueue)
 	{
-		for (auto cmdbt : g_ButtonQueue)
+		float remaining = 0.0f;
+		// 无 CD 或只剩尾巴（<0.05s）时传 0 隐藏，避免出现 "0.00"/"0.01"
+		if (GetButtonRemainingCd(cmdbt, &remaining))
 		{
-			float remaining = 0.0f;
-			// 无 CD 或只剩尾巴（<0.05s）时传 0 隐藏，避免出现 "0.00"/"0.01"
-			if (GetButtonRemainingCd(cmdbt, &remaining))
-			{
-				WfeCooldownUpdate(cmdbt, remaining);
-			}
-			else
-			{
-				WfeCooldownUpdate(cmdbt, 0.0f);
-			}
+			WfeCooldownUpdate(cmdbt, remaining);
+		}
+		else
+		{
+			WfeCooldownUpdate(cmdbt, 0.0f);
 		}
 	}
 }
