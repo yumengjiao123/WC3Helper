@@ -10,7 +10,8 @@
 #include <intrin.h>
 #include <stdlib.h>
 
-// spdlog
+// spdlog：日志内部按 UTF-8 存储，打开宽字符重载以便直接输出 wchar_t 路径
+#define SPDLOG_WCHAR_TO_UTF8_SUPPORT
 #include "spdlog/spdlog.h"
 #include "spdlog/async.h"
 #include "spdlog/sinks/basic_file_sink.h"
@@ -50,7 +51,7 @@ char gGamepath[MAX_PATH] = {0};
 
 // 外部 storm80.mix（降延迟）的加载状态，详见 LoadStorm80()
 static HMODULE g_storm80 = nullptr;
-static char g_storm80Path[MAX_PATH] = {0};
+static wchar_t g_storm80Path[MAX_PATH] = {0};
 static bool g_LoadStorm80 = false;
 
 DWORD g_LoadingBarPtr;
@@ -160,29 +161,29 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 
 // 解析颜色字符串，统一按十六进制，允许 0x / 0X / # 前缀。
 // 不足 8 位时按 RRGGBB 处理并补上不透明 alpha；解析不出数字则返回 def。
-static DWORD ParseHexColor(const char *text, DWORD def)
+static DWORD ParseHexColor(const wchar_t *text, DWORD def)
 {
 	if (text == nullptr)
 	{
 		return def;
 	}
 
-	while (*text == ' ' || *text == '\t')
+	while (*text == L' ' || *text == L'\t')
 	{
 		text++;
 	}
 
-	if (text[0] == '0' && (text[1] == 'x' || text[1] == 'X'))
+	if (text[0] == L'0' && (text[1] == L'x' || text[1] == L'X'))
 	{
 		text += 2;
 	}
-	else if (text[0] == '#')
+	else if (text[0] == L'#')
 	{
 		text++;
 	}
 
-	char *end = nullptr;
-	unsigned long value = strtoul(text, &end, 16);
+	wchar_t *end = nullptr;
+	unsigned long value = wcstoul(text, &end, 16);
 	if (end == text)
 	{
 		return def;
@@ -196,34 +197,74 @@ static DWORD ParseHexColor(const char *text, DWORD def)
 	return (DWORD)value;
 }
 
-void ReadConfig()
+// 配置文件缺失时按默认值写出一份（带注释），方便用户直接在 ini 里改
+static void WriteDefaultConfig(const wchar_t *iniPath)
 {
-	char szIniPath[MAX_PATH] = {0};
-	GetCurrentDirectoryA(MAX_PATH, szIniPath);
+	// 整份内容直接用宽字符落盘（UTF-16LE + BOM），键值仍然都是 ASCII
+	static const wchar_t kDefaultIni[] =
+		L"; WC3Helper (ManaBar) 配置文件\n"
+		L"; 文件不存在时按默认值自动生成，修改后重启游戏生效\n"
+		L"\n"
+		L"[Helper]\n"
+		L"; 宽屏支持：1=开启，0=关闭\n"
+		L"WideScreen=1\n"
+		L"\n"
+		L"; 蓝条颜色：0xAARRGGBB，也可只写 6 位 RRGGBB（alpha 自动补 FF）\n"
+		L"; 例：0xFFFF8C00 橙 / 0xFF00E5EE 蓝绿 / 00FF00 绿\n"
+		L"ManaBarColor=0xFF00AAFF\n"
+		L"\n"
+		L"; 降延迟：1=开启，0=关闭。开启后加载同目录下的 strom80.dll\n"
+		L"NoDelay=0\n";
 
-	if (StrStrIA(szIniPath, "\\YY") != nullptr)
+	HANDLE hFile = CreateFile(iniPath, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (hFile == INVALID_HANDLE_VALUE)
 	{
-		PathRemoveFileSpecA(szIniPath);
+		return;
 	}
 
-	strcat(szIniPath, "\\helper.ini");
-	g_WideScreen = (GetPrivateProfileIntA("Helper", "WideScreen", 1, szIniPath) != 0);
+	// 先写 UTF-16LE BOM，再写正文（去掉结尾的 L'\0'）
+	const wchar_t bom = 0xFEFF;
+	DWORD written = 0;
+	WriteFile(hFile, &bom, sizeof(bom), &written, nullptr);
+	WriteFile(hFile, kDefaultIni, (DWORD)(sizeof(kDefaultIni) - sizeof(wchar_t)), &written, nullptr);
+	CloseHandle(hFile);
+}
+
+void ReadConfig()
+{
+	wchar_t szIniPath[MAX_PATH] = {0};
+	GetCurrentDirectory(MAX_PATH, szIniPath);
+
+	if (StrStrI(szIniPath, L"\\YY") != nullptr)
+	{
+		PathRemoveFileSpec(szIniPath);
+	}
+
+	wcscat(szIniPath, L"\\helper.ini");
+
+	// ini 不存在则先创建一份默认配置，后面的读取逻辑保持不变
+	if (GetFileAttributes(szIniPath) == INVALID_FILE_ATTRIBUTES)
+	{
+		WriteDefaultConfig(szIniPath);
+	}
+
+	g_WideScreen = (GetPrivateProfileInt(L"Helper", L"WideScreen", 1, szIniPath) != 0);
 
 	// ManaBarColor：写 0xAARRGGBB / AARRGGBB，或者只写 6 位 RRGGBB（alpha 自动补 FF）。
 	// 例：0xFFFF8C00 橙 / 0xFF00E5EE 蓝绿 / 00FF00 绿
-	char szColor[32] = {0};
-	GetPrivateProfileStringA("Helper", "ManaBarColor", "0xFF00AAFF", szColor, sizeof(szColor), szIniPath);
+	wchar_t szColor[32] = {0};
+	GetPrivateProfileString(L"Helper", L"ManaBarColor", L"0xFF00AAFF", szColor, 32, szIniPath);
 	g_manaBarColor = ParseHexColor(szColor, g_manaBarColor);
 
 	// NoDelay=1 时才加载外部 storm80.mix（见 LoadStorm80）
-	g_LoadStorm80 = (GetPrivateProfileIntA("Helper", "NoDelay", 0, szIniPath) != 0);
+	g_LoadStorm80 = (GetPrivateProfileInt(L"Helper", L"NoDelay", 0, szIniPath) != 0);
 
 	// storm80.mix 与 helper.ini 同目录
-	strcpy(g_storm80Path, szIniPath);
-	if (char *slash = strrchr(g_storm80Path, '\\'))
+	wcscpy(g_storm80Path, szIniPath);
+	if (wchar_t *slash = wcsrchr(g_storm80Path, L'\\'))
 	{
 		slash[1] = 0;
-		strcat(g_storm80Path, "strom80.dll");
+		wcscat(g_storm80Path, L"strom80.dll");
 	}
 }
 
@@ -247,14 +288,14 @@ static void LoadStorm80()
 		return;
 	}
 
-	g_storm80 = LoadLibraryA(g_storm80Path);
+	g_storm80 = LoadLibrary(g_storm80Path);
 	if (!g_storm80)
 	{
-		spdlog::error("storm80: LoadLibraryA('{}') failed, err {}", g_storm80Path, GetLastError());
+		spdlog::error(L"storm80: LoadLibrary('{}') failed, err {}", g_storm80Path, GetLastError());
 		return;
 	}
 
-	spdlog::info("storm80: loaded from '{}'", g_storm80Path);
+	spdlog::info(L"storm80: loaded from '{}'", g_storm80Path);
 }
 
 void DoInit()
@@ -310,7 +351,7 @@ void ResetDelay(LPVOID gameDllBase)
 		0xFF, 0xCC, 0xFF, 0xB8, 0xFF, 0xFA, 0xFF, 0x00, 0xFF, 0x00,
 		0xFF, 0x00, 0xFF, 0xC3};
 
-	int len = sizeof(delay_reducer_sig_data) / 2;
+	auto len = sizeof(delay_reducer_sig_data) / 2;
 	offset = 17;
 	DWORD dwStartAddr = (DWORD)gameDllBase;
 	DWORD dwEndAddr = (DWORD)gameDllBase + GAME_DLL_SIZE - len;
