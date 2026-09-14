@@ -28,12 +28,8 @@ link_directories(${CMAKE_HOME_DIRECTORY}/libs)
 # 主程序源文件
 set(MAIN_SOURCES
 	helper.cpp
-	jass.cpp
 	plugins/mana.cpp
 	plugins/widescreen.cpp
-	plugins/unitinfo.cpp
-	plugins/ChatCommand.cpp
-	plugins/unitcommand.cpp
 	plugins/CoolDownDraw.cpp
 	plugins/WfeCooldown.cpp
 )
@@ -54,8 +50,6 @@ target_link_libraries(WC3Helper PRIVATE
 	legacy_stdio_definitions.lib
 )
 
-# set_target_properties(WC3Helper PROPERTIES SUFFIX ".mix")
-# strom80
 # 设置输出目录
 set_target_properties(WC3Helper PROPERTIES
 	LINK_FLAGS "/SAFESEH:NO"

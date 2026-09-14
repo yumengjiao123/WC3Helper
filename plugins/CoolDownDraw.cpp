@@ -6,8 +6,6 @@ typedef void *POINTER_64 PVOID64;
 #include <shlwapi.h>
 #include <vector>
 #include <chrono>
-#include <cstdio>
-#include "jass.h"
 
 // WFE 风格的 CD 数字 + 屏幕文本（1.24e / 1.27a，移植自 WFEDll 的 CCooldownUI）
 #include "WfeCooldown.h"
@@ -16,8 +14,6 @@ typedef void *POINTER_64 PVOID64;
 #include "spdlog/spdlog.h"
 
 extern LPVOID g_gameDllBase;
-extern DWORD LocalHero;
-extern bool g_IsPlayerObserver;
 
 //============= 全局变量 =============
 std::vector<CCommandButton *> g_ButtonQueue;
@@ -78,16 +74,7 @@ pTargetFunc g_oRealFunc = nullptr;
 using CdDisplayResetFunc = void(__fastcall *)(DWORD pThis, DWORD dummyEdx);
 CdDisplayResetFunc g_oRealCdDisplayReset = nullptr;
 
-DWORD g_oIsDrawSkillPanel = 0;
-DWORD g_oIsDrawSkillPanelOverlay = 0;
-DWORD g_oIsNeedDrawUnit2 = 0;
-
-DWORD g_DrawSkillPanelOffset = 0;
-DWORD g_DrawSkillPanelOverlayOffset = 0;
-DWORD g_IsNeedDrawUnitOriginOffset = 0;
-
-DWORD g_Func6F0E8030 = 0;
-DWORD g_jmpback = 0;
+static DWORD g_oldGameUI = 0;
 
 void UnHookCooldown();
 void __fastcall MyCdSweepTick(int *a1, float *a2, int a3);
@@ -109,18 +96,9 @@ void DrawSystemInfo()
 	auto time_t_now = std::chrono::system_clock::to_time_t(now);
 	auto tm = *std::localtime(&time_t_now);
 
-	auto wtext = std::format(L"{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d} ", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-	if (g_IsPlayerObserver)
-	{
-		wtext += L" [观看者模式]";
-	}
-
-	// 宽字符 -> 系统 ANSI(GBK)：war3 的字体按 GBK 解释字节
-	char text[256] = {0};
-	WideCharToMultiByte(CP_ACP, 0, wtext.c_str(), -1, text, sizeof(text), nullptr, nullptr);
-
+	auto text = std::format("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d} ", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 	// 内部按字符串去重，重复调用不会重复 SetText
-	WfeSystemTextUpdate(text);
+	WfeSystemTextUpdate(text.c_str());
 }
 
 // 游戏 UI 的每帧动画 tick。
@@ -152,133 +130,6 @@ std::string GetAbilityFourCC(DWORD abilityID)
 	ccid[0] = abilityID >> 24 & 0xFF;
 	return ccid;
 }
-#ifndef WC3HELPER_BASIC
-int __fastcall MyIsDrawSkillPanel(unsigned char *UnitAddr, int addr1)
-{
-	int result;
-	int GETOID;
-	int OID;
-	using DrawSkillPanel = int(__thiscall *)(void *, int);
-
-	if (addr1)
-	{
-		GETOID = *(int *)(addr1 + 444);
-		if (GETOID > 0)
-			OID = *(int *)(GETOID + 8);
-		else
-			OID = 852290;
-		result = 1;
-
-		if (((IsNeedDrawUnitOrigin)g_IsNeedDrawUnitOriginOffset)(UnitAddr))
-		{
-			((DrawSkillPanel)g_DrawSkillPanelOffset)(UnitAddr, OID);
-		}
-		else if (IsNotBadUnit(UnitAddr))
-		{
-			if (!IsEnemy(UnitAddr))
-			{
-				((DrawSkillPanel)g_DrawSkillPanelOffset)(UnitAddr, OID);
-				return result;
-			}
-
-			if (GetUnitOwnerSlot(UnitAddr) >= 12)
-			{
-				((DrawSkillPanel)g_DrawSkillPanelOffset)(UnitAddr, OID);
-				return result;
-			}
-
-			if (MyIsPlayerObserver(MyGetLocalPlayer()))
-			{
-				((DrawSkillPanel)g_DrawSkillPanelOffset)(UnitAddr, OID);
-				return result;
-			}
-		}
-	}
-	else
-	{
-		return 0;
-	}
-	return result;
-}
-
-int __fastcall MyIsDrawSkillPanelOverlay(unsigned char *UnitAddr, int addr1)
-{
-	int result; // eax@2
-	int GETOID; // eax@3
-	int OID;	// esi@4
-
-	using DrawSkillPanelOverlay = int(__thiscall *)(void *, int);
-
-	if (addr1)
-	{
-		GETOID = *(int *)(addr1 + 444);
-		if (GETOID > 0)
-			OID = *(int *)(GETOID + 8);
-		else
-			OID = 852290;
-
-		result = 1;
-
-		if (((IsNeedDrawUnitOrigin)g_IsNeedDrawUnitOriginOffset)(UnitAddr))
-		{
-			((DrawSkillPanelOverlay)g_DrawSkillPanelOverlayOffset)(UnitAddr, OID);
-		}
-		else if (IsNotBadUnit(UnitAddr))
-		{
-			if (!IsEnemy(UnitAddr))
-			{
-				((DrawSkillPanelOverlay)(g_DrawSkillPanelOverlayOffset))(UnitAddr, OID);
-				return result;
-			}
-
-			if (GetUnitOwnerSlot(UnitAddr) >= 12)
-			{
-				((DrawSkillPanelOverlay)(g_DrawSkillPanelOverlayOffset))(UnitAddr, OID);
-				return result;
-			}
-
-			if (MyIsPlayerObserver(MyGetLocalPlayer()))
-			{
-				((DrawSkillPanelOverlay)(g_DrawSkillPanelOverlayOffset))(UnitAddr, OID);
-				return result;
-			}
-		}
-	}
-	else
-	{
-		result = 0;
-	}
-	return result;
-}
-
-int __fastcall MyIsNeedDrawUnit2(unsigned char *UnitAddr, int)
-{
-	using IsNeedDrawUnit2 = int(__thiscall *)(unsigned char *UnitAddr);
-
-	if (IsNotBadUnit(UnitAddr))
-	{
-		if (!IsEnemy(UnitAddr))
-		{
-			return 1;
-		}
-
-		if (GetUnitOwnerSlot(UnitAddr) >= 12)
-		{
-			return 1;
-		}
-
-		if (g_IsPlayerObserver)
-		{
-			return 1;
-		}
-	}
-	if (g_oIsNeedDrawUnit2)
-	{
-		return ((IsNeedDrawUnit2)g_oIsNeedDrawUnit2)(UnitAddr);
-	}
-	return 0;
-}
-#endif
 
 void HookCooldown()
 {
@@ -322,7 +173,6 @@ void HookCooldown()
 		}
 	}
 
-	g_Func6F0E8030 = (DWORD)g_gameDllBase + 0x0E8030;
 	DWORD pPreSetCooldown = (DWORD)g_gameDllBase;
 	DWORD pCdSweepTick = (DWORD)g_gameDllBase;
 
@@ -351,6 +201,7 @@ void HookCooldown()
 	// FunHook((void *)pPreSetCooldown, (void *)SetCdForAddr, (void *&)g_oRealFunc);
 	FunHook((void *)pCdSweepTick, (void *)MyCdSweepTick, (void *&)g_oCdSweepTick);
 
+	g_ButtonQueue.reserve(20); // 12 技能 + 6 物品，留余量避免反复扩容
 	g_hookCoolDown = true;
 	atexit(UnHookCooldown);
 }
@@ -377,11 +228,7 @@ void UnHookCooldown()
 		UnFunHook((void *)g_oUiTick, (void *)MyUiTick);
 		g_oUiTick = nullptr;
 	}
-#ifndef WC3HELPER_BASIC
-	UnFunHook((void *)g_oIsDrawSkillPanel, (void *)MyIsDrawSkillPanel);
-	UnFunHook((void *)g_oIsDrawSkillPanelOverlay, (void *)MyIsDrawSkillPanelOverlay);
-	UnFunHook((void *)g_oIsNeedDrawUnit2, (void *)MyIsNeedDrawUnit2);
-#endif
+
 	// UnFunHook((void *)g_oRealFunc, (void *)SetCdForAddr);
 	g_ButtonQueue.clear(); // 已废弃，清空以防万一
 }
@@ -457,8 +304,6 @@ double __fastcall SetCdForAddr(DWORD pThis, int dummy)
 // 每个指针都校验 vtable == CCommandButton::vftable，防止读到已释放内存
 bool CollectCommandButtons(std::vector<CCommandButton *> &out)
 {
-	out.clear();
-	out.reserve(24); // 12 技能 + 6 物品，留余量避免反复扩容
 	if (!g_gameDllBase)
 	{
 		return false;
@@ -482,6 +327,14 @@ bool CollectCommandButtons(std::vector<CCommandButton *> &out)
 	{
 		return false;
 	}
+
+	if (g_oldGameUI == gameUI)
+	{
+		return false;
+	}
+	
+	g_oldGameUI = gameUI;
+	out.clear();
 
 	// CCommandBar：4x3 网格，12 个技能按钮
 	DWORD cmdBar = *(DWORD *)(gameUI + GAMEUI_COMMANDBAR);

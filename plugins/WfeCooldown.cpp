@@ -51,7 +51,7 @@ extern LPVOID g_stormDllBase;
 // war3 UI 坐标：左上角 (0,0)，右下角约 (0.8,0.6)；y 轴向上，所以往下用负值
 #define SYS_FRAME_POINT 0 // TOPLEFT
 #define SYS_FRAME_X 0.048f
-#define SYS_FRAME_Y (-0.041f)
+#define SYS_FRAME_Y (-0.028f)
 #define SYS_FRAME_SIZE 0.014f
 #define SYS_FRAME_COLOUR (-16777216)
 
