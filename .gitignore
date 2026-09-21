@@ -45,6 +45,7 @@ build/
 Build/
 build-*/
 ref/
+.codebuddy/
 
 # CMake generated files
 CMakeFiles/
