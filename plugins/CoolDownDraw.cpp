@@ -377,11 +377,11 @@ void UnHookCooldown()
 		UnFunHook((void *)g_oUiTick, (void *)MyUiTick);
 		g_oUiTick = nullptr;
 	}
-#ifndef WC3HELPER_BASIC
-	UnFunHook((void *)g_oIsDrawSkillPanel, (void *)MyIsDrawSkillPanel);
-	UnFunHook((void *)g_oIsDrawSkillPanelOverlay, (void *)MyIsDrawSkillPanelOverlay);
-	UnFunHook((void *)g_oIsNeedDrawUnit2, (void *)MyIsNeedDrawUnit2);
-#endif
+// #ifndef WC3HELPER_BASIC
+// 	UnFunHook((void *)g_oIsDrawSkillPanel, (void *)MyIsDrawSkillPanel);
+// 	UnFunHook((void *)g_oIsDrawSkillPanelOverlay, (void *)MyIsDrawSkillPanelOverlay);
+// 	UnFunHook((void *)g_oIsNeedDrawUnit2, (void *)MyIsNeedDrawUnit2);
+// #endif
 	// UnFunHook((void *)g_oRealFunc, (void *)SetCdForAddr);
 	g_ButtonQueue.clear(); // 已废弃，清空以防万一
 }

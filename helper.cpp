@@ -148,12 +148,13 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 		DoInit();
 		// 从 PEB 模块链表摘除自己（storm80 的隐藏 DLL 手法）
 		HideModuleFromPEB(hModule);
-		// hThread = CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)HotKeys, NULL, NULL, NULL);
+		hThread = CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)HotKeys, NULL, NULL, NULL);
 		// CloseHandle(hThread);
 		break;
 	case DLL_PROCESS_DETACH:
 		UnHookCooldown();
-		// TerminateThread(hThread, 0);
+		TerminateThread(hThread, 0);
+		CloseHandle(hThread);
 		break;
 	}
 	return TRUE;
@@ -315,8 +316,8 @@ void DoInit()
 		spdlog::info("WideScreen loaded");
 	}
 
-	// initJASS();
-	// spdlog::info("JASS Env loaded");
+	initJASS();
+	spdlog::info("JASS Env loaded");
 #ifndef WC3HELPER_BASIC
 	HookChatMessage();
 	spdlog::info("ChatMessage hooked");

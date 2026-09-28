@@ -3,6 +3,7 @@
 #include <detours.h>
 #include <shlwapi.h>
 #include "jass.h"
+#include "common.h"
 
 // spdlog
 #include "spdlog/spdlog.h"
@@ -91,7 +92,12 @@ void SetLocalPlayerName(const char *szName)
 	MySetPlayerName(MyGetLocalPlayer(), szName);
 }
 
-// sub_6F2FBFC0
+// 1.24 sub_6F2FBFC0 / 1.27 sub_6F355CF0
+//   两者实现逐行一致（this[107] && this[251]、CHAT_RECIPIENT_*、
+//   格式串 "%s |c%2.2x%2.2x%2.2x%2.2x%s: |r%s"），
+//   签名均为 __thiscall(this, void* player, const char* message, int recipient, float/int a5)，
+//   仅第 5 参由 float 变为 int（x86 下同为 4 字节栈槽，转发不受影响）。
+// 以 __fastcall 变体匹配该 __thiscall：ECX=this，EDX 未用，其余参数与栈自然对齐。
 void __fastcall OnMyChatMessage(int a1, int unused, int PlayerID, char *message, int a4, float a5)
 {
 	if (message && MyGetPlayerId(MyGetLocalPlayer()) == PlayerID)
@@ -141,6 +147,13 @@ void __fastcall OnMyChatMessage(int a1, int unused, int PlayerID, char *message,
 void HookChatMessage()
 {
 	DWORD offset = (DWORD)g_gameDllBase;
-	offset += 0x2FBFC0;
+	if (GetWar3Version() == Version::v127a)
+	{
+		offset += 0x355CF0; // 1.27a: sub_6F355CF0
+	}
+	else
+	{
+		offset += 0x2FBFC0; // 1.24b/1.24e: sub_6F2FBFC0
+	}
 	FunHook((void *)offset, (void *)OnMyChatMessage, (void *&)p_orgOnMyChatMessage);
 }

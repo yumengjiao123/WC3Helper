@@ -1,4 +1,5 @@
 #include "UnitCommand.h"
+#include "common.h"
 #include <memory>
 #include <map>
 
@@ -189,7 +190,8 @@ void ProcessGameCmd(Unit *unit, Command *CommandData, DWORD targetUint)
 	case Action_ZG_E:
 	{
 		// 诸葛 极冻凝结
-		if (MyIsUnitEnemy(handle, MyGetLocalPlayer()) && unit->dwClassId == HERO_ID_ZG)
+		if (true)
+		//if (MyIsUnitEnemy(handle, MyGetLocalPlayer()) && unit->dwClassId == HERO_ID_ZG)
 		{
 			float ax = MyGetUnitX(handle);
 			float ay = MyGetUnitY(handle);
@@ -307,6 +309,59 @@ void _declspec(naked) UnitCommandHook()
 	}
 }
 
+// ============================================================================
+// War3 1.27 订单派发入口 hook
+// ----------------------------------------------------------------------------
+// 依据 ref/Game124.dll.c 与 ref/Game127.dll.c 比对：
+//   1.24 sub_6F2CB320(unsigned __int16 a1, int a2, int *a3, int *a4, int a5)
+//        a1=flags, a2=orderId, a3=CUnit*, a4=COrderTarget*
+//        （__fastcall：flags@ECX、orderId@EDX，CUnit*/COrderTarget* 在栈上）
+//        该函数为 FPO（无 push ebp/mov ebp,esp），入口即 `push -1; push offset SEH`；
+//        旧 hook 打在 +2 的 `push offset SEH_6F2CB320`(=0x6F82AE00) 处，
+//        此时 EBP 仍指向调用者帧，故 [EBP+0xC]/[EBP+0x10] 正好是 a3/a4。
+//   1.27 sub_6F69BC60(int *a1@<edx>, int *a2@<ecx>, ..., unsigned __int16 a4, int a5)
+//        a2(ECX)=CUnit*、a1(EDX)=COrderTarget*、a4/a5(栈)=flags/orderId
+//        对应关系由 v6[144]/v6[145]、a4[8]|=4u、sub_6F3332A0+sub_6F333240
+//        ≙ a2[144]/a2[145]、a1[8]|=4u、sub_6F359A30+sub_6F3599F0 逐行确认。
+// 因此 1.27 直接在函数入口取 ECX/EDX（此时尚未被覆盖）即可拿到
+// CUnit* 与 COrderTarget*，无需像 1.24 那样从栈帧偏移读取。
+// 入口被覆盖的原始 5 字节为：55 8B EC 6A FF
+//        push ebp / mov ebp,esp / push 0FFFFFFFFh
+// 结束时原样回放，再跳到 +5 处的 `push offset SEH_6F69BC60` 继续执行。
+// ============================================================================
+void _declspec(naked) UnitCommandHook127()
+{
+	__asm
+	{
+		PUSH EBP;
+		MOV EBP, ESP;
+		SUB ESP, 0x20;
+		PUSHAD;
+	}
+	Unit *unt;
+	Command *CommandData;
+	__asm
+	{
+		// PUSHAD 保存区（自上而下 EDI/ESI/EBP/ESP/EBX/EDX/ECX/EAX）
+		MOV EAX, DWORD PTR DS : [ESP + 0x18] ; // ECX = CUnit*
+		mov unt, EAX;
+		MOV EAX, DWORD PTR DS : [ESP + 0x14] ; // EDX = COrderTarget* (Command*)
+		mov CommandData, EAX;
+	}
+	ProcessGameCmd(unt, CommandData, 0);
+	__asm
+	{
+		POPAD;
+		MOV ESP, EBP;
+		POP EBP;
+		// 回放被覆盖的原始序言，保证 EH 帧建立过程不变
+		PUSH EBP;
+		MOV EBP, ESP;
+		PUSH 0xFFFFFFFF;
+		JMP addrUnitCmdHookJMP;
+	}
+}
+
 void PatchJMP(BYTE *source, BYTE *destination, const int length)
 {
 	BYTE *jump = (BYTE *)malloc(length + 5);
@@ -324,10 +379,24 @@ void PatchJMP(BYTE *source, BYTE *destination, const int length)
 
 void UnitCommandON()
 {
-	addrCmdHookConst = (DWORD)g_gameDllBase + 0x82AE00;
-	addrUnitCmdHook = (DWORD)g_gameDllBase + 0x2CB322; // 2CB320
-	addrUnitCmdHookJMP = (DWORD)g_gameDllBase + 0x2CB327;
-	PatchJMP((BYTE *)(addrUnitCmdHook), (BYTE *)UnitCommandHook, 5);
+	const Version ver = GetWar3Version();
+	if (ver == Version::v127a)
+	{
+		// 1.27：hook 订单派发函数 sub_6F69BC60 的入口
+		//   覆盖 5 字节：55 8B EC 6A FF (push ebp / mov ebp,esp / push -1)
+		//   回跳地址 +5 => push offset SEH_6F69BC60
+		addrUnitCmdHook = (DWORD)g_gameDllBase + 0x69BC60;
+		addrUnitCmdHookJMP = (DWORD)g_gameDllBase + 0x69BC65;
+		PatchJMP((BYTE *)(addrUnitCmdHook), (BYTE *)UnitCommandHook127, 5);
+	}
+	else
+	{
+		// 1.24b/1.24e：沿用原字节补丁（+2 处 `push offset SEH_6F2CB320`，非函数入口）
+		addrCmdHookConst = (DWORD)g_gameDllBase + 0x82AE00;
+		addrUnitCmdHook = (DWORD)g_gameDllBase + 0x2CB322; // 2CB320
+		addrUnitCmdHookJMP = (DWORD)g_gameDllBase + 0x2CB327;
+		PatchJMP((BYTE *)(addrUnitCmdHook), (BYTE *)UnitCommandHook, 5);
+	}
 }
 
 bool GetLocalHero(std::string &name)

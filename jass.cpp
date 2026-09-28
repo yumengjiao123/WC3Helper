@@ -1,9 +1,26 @@
 #include "jass.h"
+#include "common.h"
 #include <cmath>
 
 #include "spdlog/spdlog.h"
 
 extern LPVOID g_gameDllBase;
+
+// ============================================================================
+// War3 1.24 <-> 1.27 适配说明（依据 ref/Game124.dll.c 与 ref/Game127.dll.c）
+// ----------------------------------------------------------------------------
+// 1) JASS 原生函数：两个版本都以「函数名 -> 实现地址」的注册表登记
+//    （1.24 注册点 sub_6F455C20，1.27 注册点 sub_6F7E3710）。同名原生两两对应，
+//    因此可直接按函数名在两个反编译文件中取到 1.27 的实现地址。
+// 2) 非原生内部函数（SendAction / WidgetPtr / ItemPtr / UnitName 等）：
+//    以「调用方一致」比对——1.27 的原生函数体会调用与 1.24 相同的内部函数序列，
+//    由调用点逐一定位；下文每处均标注 1.24 与 1.27 的函数体对应关系。
+// 3) 反编译签名中的 `double x@<st0>` 全部是 Hex-Rays 的伪参数（汇编未读取 ST0，
+//    见 Game127.dll.asm 中 sub_6F1F3D10 / sub_6F69FFA0 / sub_6F26FF80 的序言），
+//    因此 1.27 的真实参数个数/顺序与 1.24 一致，无需额外压栈。
+// 4) 结构体/内存偏移：经 GetUnitTypeId（CUnit+0x30）、IsUnitAlly、SelectUnitReal
+//    等逐条比对，CUnit 与 CGameUI 的相关字段偏移在 1.24/1.27 间保持不变。
+// ============================================================================
 
 typedef HITEM(__cdecl *pUnitItemInSlot)(HUNIT hUnit, int slot);
 typedef int(__cdecl *pGetItemTypeId)(HITEM hItem);
@@ -30,6 +47,8 @@ using pIsPlayerEnemy = BOOL(__cdecl*)(HPLAYER a1, HPLAYER a2);
 using pGetOwningPlayer = HPLAYER(__cdecl*)(HUNIT hUnit);
 using pSelectUnitReal = void(__thiscall*)(int pPlayerSelectData, HUNIT pUnit, int id, int unk1, int unk2, int unk3);
 using pUpdatePlayerSelection = void(__thiscall*)(int pPlayerSelectData, int unk);
+// 1.24 sub_6F333240 / 1.27 sub_6F3599F0：选中流程收尾（CGameUI 相关）
+using pCGameUIReset = int(__thiscall*)(void *a1);
 
 pUnitItemInSlot UnitItemInSlot = nullptr;
 pGetItemTypeId GetItemTypeId = nullptr;
@@ -55,6 +74,7 @@ pIssueTargetOrderById IssueTargetOrderById = nullptr;
 
 pSelectUnitReal SelectUnitReal = nullptr;
 pUpdatePlayerSelection UpdatePlayerSelection = nullptr;
+pCGameUIReset CGameUIReset = nullptr;
 
 DWORD addrGetItemPtr;
 DWORD addrSendActionNoNaked;
@@ -80,68 +100,93 @@ DWORD addrGetUnitArrayPtr;
 
 DWORD UnitVtable;
 
+// 1.24 sub_6F012040 / 1.27 sub_6F0506D0：构造游戏内 RCString（原为 GetJassString 内局部变量）
+DWORD addrMakeStringFunc;
+
 extern DWORD LocalHero;
 
 char tmpStr[100] = {0};
 
 void initJASS()
 {
-	UnitItemInSlot = (pUnitItemInSlot)((DWORD)g_gameDllBase + 0x3C8270);
-	GetItemTypeId = (pGetItemTypeId)((DWORD)g_gameDllBase + 0x3C57A0);
-	SelectUnit = (pSelectUnit)((DWORD)g_gameDllBase + 0x3C8450);
-	GetUnitTypeId = (pGetUnitTypeId)((DWORD)g_gameDllBase + 0x3C6450);
-	GetLocalPlayer = (pGetLocalPlayer)((DWORD)g_gameDllBase + 0x3BC6A0);
-	SetPlayerName = (pSetPlayerNameFunc)((DWORD)g_gameDllBase + 0x3C1A50);
-	GetPlayerName = (pGetPlayerNameFunc)((DWORD)g_gameDllBase + 0x3C1AA0);
-	GetUnitX = (pGetUnitX)((DWORD)g_gameDllBase + 0x3C6050);
-	GetUnitY = (pGetUnitY)((DWORD)g_gameDllBase + 0x3C6090);
-	GetUnitFacing = (pGetUnitFacing)((DWORD)g_gameDllBase + 0x3C62D0);
-	IsUnitEnemy = (pIsUnitEnemy)((DWORD)g_gameDllBase + 0x3C8610);
-	GetPlayerId = (pGetPlayerId)((DWORD)g_gameDllBase + 0x3CA180);
-	Player = (pPlayer)((DWORD)g_gameDllBase + 0x3BC670);
-	GetHeroLevel = (pGetHeroLevel)((DWORD)g_gameDllBase + 0x3C7A10);
+	// 版本判定：决定下面每个偏移取 1.24 还是 1.27 的值
+	const Version ver = GetWar3Version();
+	const bool is127 = (ver == Version::v127a);
 
-	IsPlayerObserver = (pIsPlayerObserver)((DWORD)g_gameDllBase + 0x3CA140);
-	GetOwningPlayer = (pGetOwningPlayer)((DWORD)g_gameDllBase + 0x3C8CD0);
-	IsPlayerEnemy = (pIsPlayerEnemy)((DWORD)g_gameDllBase + 0x3CA0C0);
+	// 取偏移：v124 为 1.24 偏移，v127 为 1.27 偏移（均相对 game.dll 基址）
+	const DWORD base = (DWORD)g_gameDllBase;
+	auto A = [base, is127](DWORD v124, DWORD v127) -> DWORD
+	{
+		return base + (is127 ? v127 : v124);
+	};
 
-	SetCameraField = (pSetCameraField)((DWORD)g_gameDllBase + 0x3B53F0);
+	// ---------------- JASS 原生函数（按注册表函数名对应） ----------------
+	UnitItemInSlot = (pUnitItemInSlot)A(0x3C8270, 0x1FAF50); // "UnitItemInSlot"
+	GetItemTypeId = (pGetItemTypeId)A(0x3C57A0, 0x1E2CC0);	 // "GetItemTypeId"
+	SelectUnit = (pSelectUnit)A(0x3C8450, 0x1F3D10);		 // "SelectUnit"
+	GetUnitTypeId = (pGetUnitTypeId)A(0x3C6450, 0x1E6670);	 // "GetUnitTypeId"
+	GetLocalPlayer = (pGetLocalPlayer)A(0x3BC6A0, 0x1E3150); // "GetLocalPlayer"
+	SetPlayerName = (pSetPlayerNameFunc)A(0x3C1A50, 0x1F6240); // "SetPlayerName"
+	GetPlayerName = (pGetPlayerNameFunc)A(0x3C1AA0, 0x1E3D40); // "GetPlayerName"
+	GetUnitX = (pGetUnitX)A(0x3C6050, 0x1E66B0);			 // "GetUnitX"
+	GetUnitY = (pGetUnitY)A(0x3C6090, 0x1E66F0);			 // "GetUnitY"
+	GetUnitFacing = (pGetUnitFacing)A(0x3C62D0, 0x1E6130);	 // "GetUnitFacing"
+	IsUnitEnemy = (pIsUnitEnemy)A(0x3C8610, 0x1E85C0);		 // "IsUnitEnemy"
+	GetPlayerId = (pGetPlayerId)A(0x3CA180, 0x1E3D20);		 // "GetPlayerId"
+	Player = (pPlayer)A(0x3BC670, 0x1F1E70);				 // "Player"
+	GetHeroLevel = (pGetHeroLevel)A(0x3C7A10, 0x1E2870);	 // "GetHeroLevel"
+	IsPlayerObserver = (pIsPlayerObserver)A(0x3CA140, 0x1E8170);	  // "IsPlayerObserver"
+	GetOwningPlayer = (pGetOwningPlayer)A(0x3C8CD0, 0x1E3BA0);		  // "GetOwningPlayer"
+	IsPlayerEnemy = (pIsPlayerEnemy)A(0x3CA0C0, 0x1E8090);			  // "IsPlayerEnemy"
+	SetCameraField = (pSetCameraField)A(0x3B53F0, 0x1F4170);		  // "SetCameraField"
+	IssueTargetOrderById = (pIssueTargetOrderById)A(0x3C9510, 0x1E96C0); // "IssueTargetOrderById"
+	IsUnitOwnedByPlayer = (pIsUnitOwnedByPlayer)A(0x3C8570, 0x1E8B80);	 // "IsUnitOwnedByPlayer"
+	IsUnitIllusion = (pIsUnitIllusion)A(0x3C8690, 0x1E88C0);			 // "IsUnitIllusion"
 
-	SelectUnitReal = (pSelectUnitReal)((DWORD)g_gameDllBase + 0x4256C0);
-	UpdatePlayerSelection = (pUpdatePlayerSelection)((DWORD)g_gameDllBase + 0x425FD0);
-	
-	IssueTargetOrderById = (pIssueTargetOrderById)((DWORD)g_gameDllBase + 0x3C9510);
+	// ---------------- 上层选中流程（非原生） ----------------
+	// 1.24 sub_6F4256C0「Add local %s %x:%x for player %d」 -> 1.27 sub_6F26FF80（函数体逐行一致）
+	SelectUnitReal = (pSelectUnitReal)A(0x4256C0, 0x26FF80);
+	// 1.24 sub_6F425FD0 -> 1.27 sub_6F2735E0（SendAction 内紧随 sub_6F3A2190/sub_6F1C3330 之后调用）
+	UpdatePlayerSelection = (pUpdatePlayerSelection)A(0x425FD0, 0x2735E0);
+	// 1.24 sub_6F333240 -> 1.27 sub_6F3599F0（均为 GetInstance 后调用同构的 CGameUI 方法）
+	CGameUIReset = (pCGameUIReset)A(0x333240, 0x3599F0);
 
-	IsUnitOwnedByPlayer = (pIsUnitOwnedByPlayer)((DWORD)g_gameDllBase + 0x3C8570);
-	IsUnitIllusion = (pIsUnitIllusion)((DWORD)g_gameDllBase + 0x3C8690);
-
-	W3XGlobalClass = (DWORD)g_gameDllBase + 0xACBDD8; // 1.24b和1.24e一样
-	PrintToScreen = (DWORD)g_gameDllBase + 0x2F9980;  // 1.24b和1.24e一样
+	// ---------------- 全局单例 / 数据 ----------------
+	W3XGlobalClass = A(0xACBDD8, 0xBE6350); // CGameUI 单例（均以 ".\\CGameUI.cpp" 6831 / 1108 字节创建）
+	PrintToScreen = A(0x2F9980, 0x357640);	// 1.27 由 DisplayTextToPlayer(sub_6F1DFCE0) 调用，__thiscall(CGameUI*, pos, text, dur, -1)
 	// 需要修正确认
-	addrGetItemPtr = (DWORD)g_gameDllBase + 0x3BF690;		 // 6F3BF570, 这里发现了问题
-	addrSendActionNoNaked = (DWORD)g_gameDllBase + 0x33A890; // 换成0x33AA40试试//0x33A890; // 6F33A890   1.24b 0x33A7D0
-	addrSendActionNaked = (DWORD)g_gameDllBase + 0x33A910;	 // 6F33A910   1.24b 0x33A850
-	addrSendActionNaked2 = (DWORD)g_gameDllBase + 0x33A7A0;
-	addrGetItemState = (DWORD)g_gameDllBase + 0x421680;		 // 6F421680
-	addrGetStatePtr = (DWORD)g_gameDllBase + 0xACD44C;		 // 1.24b和1.24e一样
-	addrGetStateEcx = (DWORD)g_gameDllBase + 0x3A2190;		 // 6F3A2190
-	addrGetWidgetPtr = (DWORD)g_gameDllBase + 0x3BF0F0;		 // 6F3BF0F0
-	addrLocalPlayerOffset = (DWORD)g_gameDllBase + 0xACD44C; // 1.24b和1.24e一样
-	addrGetUnitHandle1 = (DWORD)g_gameDllBase + 0x3A8BA0;	 // 6F3A8BA0
-	addrGetUnitHandle2 = (DWORD)g_gameDllBase + 0x4317C0;	 // 6F4317C0
+	addrGetItemPtr = A(0x3BF690, 0x1CFC50); // 1.24 sub_6F3BF690 / 1.27 sub_6F1CFC50（GetItemTypeId 均经由它取 item）
+	// 1.24 sub_6F33A890 -> sub_6F2CC5F0(CNetCommandUnitOrderTargetImage)
+	// 1.27 sub_6F3AE810 -> sub_6F6A0060(CNetCommandUnitOrderTargetImage)
+	addrSendActionNoNaked = A(0x33A890, 0x3AE810);
+	// 1.24 sub_6F33A910 -> sub_6F2CC730(CNetCommandUnitOrderTargetImage)
+	// 1.27 sub_6F3AE660 -> sub_6F69FEB0(CNetCommandUnitOrderTargetImage)
+	addrSendActionNaked = A(0x33A910, 0x3AE660);
+	// 1.24 sub_6F33A7A0 -> sub_6F2CC460(CNetCommandUnitOrderBasic)
+	// 1.27 sub_6F3AE4E0 -> sub_6F69FFA0(CNetCommandUnitOrderBasic)
+	addrSendActionNaked2 = A(0x33A7A0, 0x3AE4E0);
+	addrGetItemState = A(0x421680, 0x276490); // 1.24 sub_6F421680 / 1.27 sub_6F276490（221 初值 + this[131] 遍历，逐行一致）
+	addrGetStatePtr = A(0xACD44C, 0xBE4238);  // 游戏全局对象（1.24 dword_6FACD44C / 1.27 dword_6FBE4238）
+	addrGetStateEcx = A(0x3A2190, 0x1C3330);  // 1.24 this[a2+22] / 1.27 同构（UnitItemInSlot、SendAction 一致调用）
+	addrGetWidgetPtr = A(0x3BF0F0, 0x1D17D0); // 1.24 sub_6F3BF0F0 / 1.27 sub_6F1D17D0（IssueTargetOrderById 一致调用）
+	addrLocalPlayerOffset = A(0xACD44C, 0xBE4238); // 同为上面的游戏全局对象
+	addrGetUnitHandle1 = A(0x3A8BA0, 0x1C3200);	   // 1.24 sub_6F3A8BA0 / 1.27 sub_6F1C3200
+	addrGetUnitHandle2 = A(0x4317C0, 0x2651D0);	   // 1.24 sub_6F4317C0 / 1.27 sub_6F2651D0
 
-	addrUnitName1 = (DWORD)g_gameDllBase + 0x3BE7F0; // 6F3BE7F0
-	addrUnitName2 = (DWORD)g_gameDllBase + 0x32E720; // 6F32E720
+	addrUnitName1 = A(0x3BE7F0, 0x1D1550); // 单位句柄 -> CUnit*（GetUnitX/UnitItemInSlot 一致调用）
+	addrUnitName2 = A(0x32E720, 0x326BA0); // CUnit+0x30 处字符串表取串（返回 "Default string" 的同构函数）
 
-	addrGetPlayerName1 = (DWORD)g_gameDllBase + 0x3BE010;
-	addrGetPlayerName2 = (DWORD)g_gameDllBase + 0x40BB30;
+	addrGetPlayerName1 = A(0x3BE010, 0x1D03D0); // 玩家句柄 -> CPlayer*
+	addrGetPlayerName2 = A(0x40BB30, 0x24A890); // CPlayer+0x24 名字串（函数体逐行一致）
 
-	addrGlobalClass = (DWORD)g_gameDllBase + 0xACBDD8;	   // 1.24b和1.24e一样
-	addrGetUnitArrayPtr = (DWORD)g_gameDllBase + 0x39C220; // //1.24e 6F39C220
+	addrGlobalClass = A(0xACBDD8, 0xBE6350);		 // 同 CGameUI 单例
+	addrGetUnitArrayPtr = A(0x39C220, 0x364A40); // 1.24 sub_6F39C220 / 1.27 sub_6F364A40（return this+384，逐行一致）
 
-	addrUseItemNoLoc = (DWORD)g_gameDllBase + 0x33A7A0; // 6F33A7A0
+	addrUseItemNoLoc = A(0x33A7A0, 0x3AE4E0); // 同 addrSendActionNaked2
 
-	UnitVtable = (DWORD)g_gameDllBase + 0x943A94;
+	UnitVtable = A(0x943A94, 0xA4A704); // 1.24 CUnit::`vftable'(0x6F943A94) / 1.27 CUnit::`vftable'(0x6FA4A704)
+
+	addrMakeStringFunc = A(0x012040, 0x0506D0); // 1.24 sub_6F012040 / 1.27 sub_6F0506D0（RCString 构造）
 }
 
 HITEM MyUnitItemInSlot(HUNIT hUnit, int slot)
@@ -395,8 +440,8 @@ int IsNotBadUnit(unsigned char* unitaddr, int onlymem)
 {
 	if (unitaddr)
 	{
-		int xaddraddr = (int)&UnitVtable;//6F943A94
-
+		int xaddraddr = (int)&UnitVtable;// 1.24: 6F943A94, 1.27: 6FA4A704
+		// CUnit::`vftable' 首地址比对（CUnit 布局 1.24/1.27 一致）
 		if (*(unsigned char*)xaddraddr != *(unsigned char*)unitaddr)
 			return FALSE;
 		else if (*(unsigned char*)(xaddraddr + 1) != *(unsigned char*)(unitaddr + 1))
@@ -449,19 +494,17 @@ int IsNotBadUnit(unsigned char* unitaddr, int onlymem)
 	return FALSE;
 }
 
-int(__thiscall* sub_6F333240)(void* a1);
-//sub_6F4256C0
+//sub_6F4256C0 (1.24) / sub_6F26FF80 (1.27)
 void MySelectUnitReal(HUNIT unit)
 {
-	if (SelectUnitReal && UpdatePlayerSelection && IsNotBadUnit((unsigned char*)unit,0))
+	if (SelectUnitReal && UpdatePlayerSelection && IsNotBadUnit((unsigned char*)unit, 0))
 	{
-		sub_6F333240 = (int(__thiscall*)(void* a1))((DWORD)g_gameDllBase + 0x333240);
 		int localPlayer = GetLocalPlayer();
 		int playerslot = GetPlayerId(localPlayer);
 		int playerseldata = *(int*)(localPlayer + 0x34);
 		SelectUnitReal(playerseldata, unit, playerslot, 0, 1, 1);
 		UpdatePlayerSelection((int)playerseldata, 0);
-		sub_6F333240(0);
+		CGameUIReset(0);
 	}
 }
 
@@ -588,13 +631,12 @@ void MyUseSkillEx(DWORD myhUnit, DWORD cmdId, bool needspell, bool cstatus)
 
 bool MyIssueTargetOrderById(DWORD myhUnit, DWORD cmdId, DWORD target)
 {
-	// sub_6F3C9510
+	// 1.24 sub_6F3C9510 / 1.27 sub_6F1E96C0
 	return IssueTargetOrderById(myhUnit, cmdId, target);
 }
 
 void GetJassString(char *szString, CJassString *String)
 {
-	DWORD addrMakeStringFunc = (DWORD)g_gameDllBase + 0x012040;
 	strcpy_s(tmpStr, sizeof(tmpStr), szString);
 	__asm
 	{
@@ -699,14 +741,14 @@ bool MyIsPlayerObserver(HPLAYER hPlayer)
 
 HPLAYER MyGetOwnerPlayer(HUNIT unit)
 {
-	//sub_6F3C8CD0
+	// 1.24 sub_6F3C8CD0 / 1.27 sub_6F1E3BA0
 	return GetOwningPlayer(unit);
 }
 
 int GetUnitOwnerSlot(unsigned char* unitaddr)
 {
 	if (unitaddr)
-		return *(int*)(unitaddr + 88);
+		return *(int*)(unitaddr + 88); // CUnit+0x58，1.24/1.27 一致
 	return 15;
 }
 
@@ -764,6 +806,5 @@ DWORD JGetUnitArray(DWORD &Sz)
 	}
 }
 
-// sub_6F301250
-// sub_6F2F9980
-// sub_10022C30
+// 1.24 sub_6F301250 / 1.27 sub_6F34F3A0：CGameUI::GetInstance（1.27 由 helper 已可用）
+// 1.24 sub_6F2F9980 已被 PrintToScreen 取代
