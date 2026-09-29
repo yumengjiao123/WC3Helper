@@ -607,7 +607,7 @@ void WINAPI HotKeys()
 			if (!bIsShown)
 			{
 				TextPrint("|CFFFCD211 DMF|R 大米饭显蓝消延迟改名插件帮助.\n"
-						  "     |CFFFF0000F5|R              : Enable / Disable ShowManaBar (Enabled by default)\n"
+						//   "     |CFFFF0000F5|R              : Enable / Disable ShowManaBar (Enabled by default)\n"
 						  "     |CFFFF0000F6|R              : Enable / Disable Lag Reducer\n"
 #ifndef WC3HELPER_BASIC
 						  "     |CFFFF0000F7|R              : Enable / Disable Auto cast skill\n"
@@ -627,13 +627,13 @@ void WINAPI HotKeys()
 				DelayReducer2(g_gameDllBase);
 			}
 
-			if (HotKeyPressed(VK_ShowManaBar))
-			{
-				spdlog::info("ShowManaBar turned On");
-				TextPrint("|CFFFCD211 DMF|R: Show ManaBar turned |CFF00FF00On|R.", 5.0f);
-				while (HotKeyPressed(VK_ShowManaBar))
-					Sleep(100);
-			}
+			// if (HotKeyPressed(VK_ShowManaBar))
+			// {
+			// 	spdlog::info("ShowManaBar turned On");
+			// 	TextPrint("|CFFFCD211 DMF|R: Show ManaBar turned |CFF00FF00On|R.", 5.0f);
+			// 	while (HotKeyPressed(VK_ShowManaBar))
+			// 		Sleep(100);
+			// }
 
 			if (HotKeyPressed(VK_DelayReducer))
 			{

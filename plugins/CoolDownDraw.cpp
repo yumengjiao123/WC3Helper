@@ -61,16 +61,13 @@ bool g_showSystemInfo = true;
 void FunHook(void *pOldFuncAddr, void *pNewFuncAddr, void *&pCallBackFuncAddr);
 void UnFunHook(void *pOldFuncAddr, void *pNewFuncAddr);
 
-using CdSweepTickFn = void(__fastcall *)(int *a1, float *a2, int a3);
+using CdSweepTickFn = double(__fastcall *)(DWORD pThis, int dummy);
 using UiTickFn = void(__fastcall *)(void *pThis, void *edx, int dt);
 using IsNeedDrawUnitOrigin = int(__thiscall *)(void *);
 
 CdSweepTickFn g_oCdSweepTick = nullptr;
 UiTickFn g_oUiTick = nullptr;
 DWORD g_lastSysInfoTick = 0;
-
-using pTargetFunc = double(__fastcall *)(DWORD pThis, int dummy);
-pTargetFunc g_oRealFunc = nullptr;
 
 // 游戏 sub_6F337E70：清除按钮 CD 显示的统一入口
 // （CD 结束 sub_6F35F170 / 按钮重置 sub_6F35F150 / 按钮刷新 sub_6F369390 /
@@ -86,11 +83,10 @@ DWORD g_DrawSkillPanelOffset = 0;
 DWORD g_DrawSkillPanelOverlayOffset = 0;
 DWORD g_IsNeedDrawUnitOriginOffset = 0;
 
-DWORD g_Func6F0E8030 = 0;
-DWORD g_jmpback = 0;
+static DWORD g_oldGameUI = 0;
 
 void UnHookCooldown();
-void __fastcall MyCdSweepTick(int *a1, float *a2, int a3);
+double __fastcall MyCdSweepTick(DWORD pThis, int dummy);
 // 游戏清除按钮 CD 显示的统一入口（1.27a: sub_6F39A4C0）
 void __fastcall MyCdDisplayReset(DWORD pThis, DWORD dummyEdx);
 // 游戏 UI 每帧 tick（1.27a: sub_6F18F030）
@@ -109,18 +105,14 @@ void DrawSystemInfo()
 	auto time_t_now = std::chrono::system_clock::to_time_t(now);
 	auto tm = *std::localtime(&time_t_now);
 
-	auto wtext = std::format(L"{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d} ", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	auto text = std::format("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d} ", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 	if (g_IsPlayerObserver)
 	{
-		wtext += L" [观看者模式]";
+		text += " [观看者模式]";
 	}
 
-	// 宽字符 -> 系统 ANSI(GBK)：war3 的字体按 GBK 解释字节
-	char text[256] = {0};
-	WideCharToMultiByte(CP_ACP, 0, wtext.c_str(), -1, text, sizeof(text), nullptr, nullptr);
-
 	// 内部按字符串去重，重复调用不会重复 SetText
-	WfeSystemTextUpdate(text);
+	WfeSystemTextUpdate(text.c_str());
 }
 
 // 游戏 UI 的每帧动画 tick。
@@ -322,25 +314,20 @@ void HookCooldown()
 		}
 	}
 
-	g_Func6F0E8030 = (DWORD)g_gameDllBase + 0x0E8030;
-	DWORD pPreSetCooldown = (DWORD)g_gameDllBase;
 	DWORD pCdSweepTick = (DWORD)g_gameDllBase;
 
 	if (ver == Version::v124e)
 	{
-		pPreSetCooldown += 0x3502A0; // sub_6F35F170也可以
-		// 每帧驱动：sub_6F35F170（与 1.27a 的 sub_6F38FDD0 同构）
-		pCdSweepTick += WFE_124E_SWEEP_TICK;
+		pCdSweepTick += 0x3502A0; // sub_6F35F170也可以
 	}
 	else if (ver == Version::v126a)
 	{
-		pPreSetCooldown += 0x34F760;
+		pCdSweepTick += 0x34F760;
 		spdlog::info("v126a");
 	}
 	else if (ver == Version::v127a)
 	{
-		pPreSetCooldown += 0x398B30;
-		pCdSweepTick += OFF_127A_CD_SWEEP_TICK;
+		pCdSweepTick += 0x398B30;
 		spdlog::info("v127a");
 	}
 	else
@@ -348,9 +335,9 @@ void HookCooldown()
 		return;
 	}
 
-	// FunHook((void *)pPreSetCooldown, (void *)SetCdForAddr, (void *&)g_oRealFunc);
 	FunHook((void *)pCdSweepTick, (void *)MyCdSweepTick, (void *&)g_oCdSweepTick);
 
+	g_ButtonQueue.reserve(20); // 12 技能 + 6 物品，留余量避免反复扩容
 	g_hookCoolDown = true;
 	atexit(UnHookCooldown);
 }
@@ -377,6 +364,8 @@ void UnHookCooldown()
 		UnFunHook((void *)g_oUiTick, (void *)MyUiTick);
 		g_oUiTick = nullptr;
 	}
+
+	UnFunHook((void *)g_oCdSweepTick, (void *)MyCdSweepTick);
 // #ifndef WC3HELPER_BASIC
 // 	UnFunHook((void *)g_oIsDrawSkillPanel, (void *)MyIsDrawSkillPanel);
 // 	UnFunHook((void *)g_oIsDrawSkillPanelOverlay, (void *)MyIsDrawSkillPanelOverlay);
@@ -445,13 +434,6 @@ static bool GetButtonRemainingCd(CCommandButton *cmdbt, float *remain)
 	return *remain > 0.0f;
 }
 
-double __fastcall SetCdForAddr(DWORD pThis, int dummy)
-{
-	// 按钮列表由 CollectCommandButtons 从 CGameUI 全局单例直接枚举
-	// （12 技能 + 6 物品栏），这里不需要再运行时收集
-	return g_oRealFunc(pThis, dummy);
-}
-
 // 从 CGameUI 全局单例直接枚举全部命令按钮（12 技能 + 6 物品栏）。
 // 返回 false 表示当前没有存活的游戏 UI（比如在主菜单界面）。
 // 每个指针都校验 vtable == CCommandButton::vftable，防止读到已释放内存
@@ -482,6 +464,14 @@ bool CollectCommandButtons(std::vector<CCommandButton *> &out)
 	{
 		return false;
 	}
+
+	if (g_oldGameUI == gameUI)
+	{
+		return false;
+	}
+	
+	g_oldGameUI = gameUI;
+	out.clear();
 
 	// CCommandBar：4x3 网格，12 个技能按钮
 	DWORD cmdBar = *(DWORD *)(gameUI + GAMEUI_COMMANDBAR);
@@ -562,15 +552,15 @@ void __fastcall MyCdDisplayReset(DWORD pThis, DWORD dummyEdx)
 	}
 }
 
-void __fastcall MyCdSweepTick(int *a1, float *a2, int a3)
+double __fastcall MyCdSweepTick(DWORD pThis, int dummy)
 {
 	// 先走原函数，保证游戏自身扫光动画不受影响
-	if (g_oCdSweepTick)
-		g_oCdSweepTick(a1, a2, a3);
+	if (!g_oCdSweepTick)
+		return 0.00;
 
-	if (!a1 || !g_useWfeCooldown)
+	if (!g_useWfeCooldown)
 	{
-		return;
+		return g_oCdSweepTick(pThis, dummy);
 	}
 
 	// 每次都重新枚举：按钮会随 UI 刷新 / 结束任务重建，
@@ -590,4 +580,5 @@ void __fastcall MyCdSweepTick(int *a1, float *a2, int a3)
 			WfeCooldownUpdate(cmdbt, 0.0f);
 		}
 	}
+	return g_oCdSweepTick(pThis, dummy);
 }
