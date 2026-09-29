@@ -67,7 +67,6 @@ void WriteBytes(void *lpAddr, LPBYTE data, DWORD len);
 void ResetDelay(LPVOID gameDllBase);
 void DelayReducer(LPVOID gameDllBase);
 void DelayReducer2(LPVOID gameDllBase);
-void SetManaBarColor();
 void initLog();
 void HookChatMessage();
 void HookCooldown();
@@ -332,7 +331,6 @@ void DoInit()
 
 	// GameStateInit(gameDllBase);
 	// LoadWFE();
-	// SetManaBarColor();
 	// DreamUiInit(g_gameDllBase, stormDllBase, true);
 }
 
@@ -443,51 +441,6 @@ void AutoSpellSkill()
 	else
 	{
 		TextPrint("|CFFFCD211 DMF|R: AutoSpellSkill turned |CFFFF0000Off|R.", 3.0f);
-	}
-}
-
-void SetManaBarColor()
-{
-	// 1.24e
-	// FF 00 FF FF FF   00 00 00 E9 2E  89 08 B0 00 18  19 02
-	// FF 00 FF FF FF   00 00 00 E9 2E  6A 18 B0 00 D1  18 02
-
-	BYTE manabar_color_sig_data[] = {
-		0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xE9, 0xFF, 0x2E,
-		0x00, 0x00, 0x00, 0x00, 0xFF, 0xB0, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0xFF, 0x02};
-
-	DWORD len = sizeof(manabar_color_sig_data) / 2;
-	DWORD dwStartAddr = (DWORD)0x00000000;
-	DWORD dwEndAddr = 0xFFFFFFFF - len;
-	bool found = true;
-	while (dwStartAddr < dwEndAddr)
-	{
-		found = true;
-		for (DWORD i = 0; i < len; i++)
-		{
-			BYTE code = *(BYTE *)(dwStartAddr + i);
-			if (manabar_color_sig_data[i * 2 + 1] != (code & manabar_color_sig_data[i * 2]))
-			{
-				found = false;
-				break;
-			}
-		}
-		if (found)
-		{
-			spdlog::info("game.dll manabar_color addr found: {}", dwStartAddr);
-			break;
-		}
-		dwStartAddr++;
-	}
-
-	if (found && dwStartAddr != 0)
-	{
-		spdlog::info("SetManaBarColor loaded");
-		WriteBytes((void *)(dwStartAddr + 1), (LPBYTE) "\xFF", 1);
-		WriteBytes((void *)(dwStartAddr + 2), (LPBYTE) "\x80", 1);
-		WriteBytes((void *)(dwStartAddr + 3), (LPBYTE) "\x00", 1);
 	}
 }
 

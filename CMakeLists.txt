@@ -10,7 +10,7 @@ if(MSVC)
     add_compile_options(/W4 /WX- /utf-8)
 	add_compile_definitions(WIN32_LEAN_AND_MEAN UNICODE _UNICODE SPDLOG_USE_STD_FORMAT)
 	add_compile_definitions(WC3HELPER_LIBRARY _CRT_SECURE_NO_WARNINGS)
-	add_compile_definitions(WC3HELPER_BASIC)
+	# add_compile_definitions(WC3HELPER_BASIC)
 	# 打开下面这行，开启静态链接运行时库
 	# set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 else()
