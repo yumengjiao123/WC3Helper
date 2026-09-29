@@ -25,6 +25,7 @@ extern LPVOID g_gameDllBase;
 typedef HITEM(__cdecl *pUnitItemInSlot)(HUNIT hUnit, int slot);
 typedef int(__cdecl *pGetItemTypeId)(HITEM hItem);
 typedef void(__cdecl *pSelectUnit)(HUNIT hUnit, bool flag);
+typedef void(__cdecl *pClearSelection)();
 typedef int(__cdecl *pGetUnitTypeId)(HUNIT hUnit);
 typedef HPLAYER(__cdecl *pGetLocalPlayer)();
 typedef void(__cdecl *pSetPlayerNameFunc)(void *, DWORD *);
@@ -53,6 +54,7 @@ using pCGameUIReset = int(__thiscall*)(void *a1);
 pUnitItemInSlot UnitItemInSlot = nullptr;
 pGetItemTypeId GetItemTypeId = nullptr;
 pSelectUnit SelectUnit = nullptr;
+pClearSelection ClearSelection = nullptr;
 pGetUnitTypeId GetUnitTypeId = nullptr;
 pGetLocalPlayer GetLocalPlayer = nullptr;
 pSetPlayerNameFunc SetPlayerName = nullptr;
@@ -124,6 +126,7 @@ void initJASS()
 	UnitItemInSlot = (pUnitItemInSlot)A(0x3C8270, 0x1FAF50); // "UnitItemInSlot"
 	GetItemTypeId = (pGetItemTypeId)A(0x3C57A0, 0x1E2CC0);	 // "GetItemTypeId"
 	SelectUnit = (pSelectUnit)A(0x3C8450, 0x1F3D10);		 // "SelectUnit"
+	ClearSelection = (pClearSelection)A(0x3BC5E0, 0x1DB310);	 // "ClearSelection"
 	GetUnitTypeId = (pGetUnitTypeId)A(0x3C6450, 0x1E6670);	 // "GetUnitTypeId"
 	GetLocalPlayer = (pGetLocalPlayer)A(0x3BC6A0, 0x1E3150); // "GetLocalPlayer"
 	SetPlayerName = (pSetPlayerNameFunc)A(0x3C1A50, 0x1F6240); // "SetPlayerName"
@@ -172,20 +175,14 @@ void initJASS()
 	addrLocalPlayerOffset = A(0xACD44C, 0xBE4238); // 同为上面的游戏全局对象
 	addrGetUnitHandle1 = A(0x3A8BA0, 0x1C3200);	   // 1.24 sub_6F3A8BA0 / 1.27 sub_6F1C3200
 	addrGetUnitHandle2 = A(0x4317C0, 0x2651D0);	   // 1.24 sub_6F4317C0 / 1.27 sub_6F2651D0
-
 	addrUnitName1 = A(0x3BE7F0, 0x1D1550); // 单位句柄 -> CUnit*（GetUnitX/UnitItemInSlot 一致调用）
 	addrUnitName2 = A(0x32E720, 0x326BA0); // CUnit+0x30 处字符串表取串（返回 "Default string" 的同构函数）
-
 	addrGetPlayerName1 = A(0x3BE010, 0x1D03D0); // 玩家句柄 -> CPlayer*
 	addrGetPlayerName2 = A(0x40BB30, 0x24A890); // CPlayer+0x24 名字串（函数体逐行一致）
-
 	addrGlobalClass = A(0xACBDD8, 0xBE6350);		 // 同 CGameUI 单例
 	addrGetUnitArrayPtr = A(0x39C220, 0x364A40); // 1.24 sub_6F39C220 / 1.27 sub_6F364A40（return this+384，逐行一致）
-
 	addrUseItemNoLoc = A(0x33A7A0, 0x3AE4E0); // 同 addrSendActionNaked2
-
 	UnitVtable = A(0x943A94, 0xA4A704); // 1.24 CUnit::`vftable'(0x6F943A94) / 1.27 CUnit::`vftable'(0x6FA4A704)
-
 	addrMakeStringFunc = A(0x012040, 0x0506D0); // 1.24 sub_6F012040 / 1.27 sub_6F0506D0（RCString 构造）
 }
 
@@ -288,8 +285,8 @@ void UseItemWithNoLocation(DWORD myhUnit, DWORD orderId, DWORD item)
 {
 	__try
 	{
-		//MySelectUnit(myhUnit, true);
-		MySelectUnitReal(myhUnit);
+		MySelectUnit(myhUnit, true);
+		//MySelectUnitReal(myhUnit);
 		__asm
 		{
 			PUSH 4;
@@ -554,7 +551,24 @@ HUNIT MyGetUnitByOffset(DWORD addr)
 
 void MyUseSkill(DWORD myhUnit, DWORD cmdId)
 {
-	UseItemWithNoLocation(myhUnit, cmdId, 0);
+	__try
+	{
+		ClearSelection();
+		MySelectUnit(myhUnit, true);
+		//MySelectUnitReal(myhUnit);
+		__asm
+		{
+			PUSH 4;
+			PUSH 0;
+			PUSH 0;
+			PUSH cmdId;
+			MOV   EAX, addrUseItemNoLoc;
+			CALL  EAX;
+		}
+	}
+	__except (1)
+	{
+	}
 }
 
 void MyUseSkillTarget(DWORD myhUnit, DWORD cmdId, DWORD target)
@@ -611,7 +625,9 @@ void MyUseSkillEx(DWORD myhUnit, DWORD cmdId, bool needspell, bool cstatus)
 	DWORD flag2 = cstatus ? 6 : 4;
 	__try
 	{
+		ClearSelection();
 		MySelectUnit(myhUnit, true);
+		//MySelectUnitReal(myhUnit);
 		__asm
 		{
 			PUSH flag2;

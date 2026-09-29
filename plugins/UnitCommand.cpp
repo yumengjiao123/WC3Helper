@@ -93,17 +93,15 @@ void ZSGWS_T(DWORD hUnit, float x, float y)
 		// MyIssueTargetOrderById(LocalHero, Action_CR_E, hUnit);
 		return;
 	}
-#if 0
-	if (MyGetUnitTypeId(LocalHero) == HERO_ID_GJ)
+
+	if (MyGetUnitTypeId(LocalHero) == HERO_ID_ZG)
 	{
-		// MyUseSkillTarget(LocalHero, Action_GJ_F, hUnit);
-		// MyIssueTargetOrderById(LocalHero, Action_GJ_C, hUnit);
 		float ax = MyGetUnitX(hUnit);
 		float ay = MyGetUnitY(hUnit);
-		MyUseSkillLoc(LocalHero, Action_GJ_C, ax, ay);
+		MyUseSkillLoc(LocalHero, Action_ZG_E, ax, ay);
 		return;
 	}
-#endif
+
 	if (MyGetUnitTypeId(LocalHero) == HERO_ID_SM) // 司马懿，自动放e
 	{
 		float ax = MyGetUnitX(hUnit);
@@ -189,9 +187,9 @@ void ProcessGameCmd(Unit *unit, Command *CommandData, DWORD targetUint)
 	}
 	case Action_ZG_E:
 	{
+		// spdlog::info("CommandData {} - {}", CommandData->X, CommandData->Y);
 		// 诸葛 极冻凝结
-		if (true)
-		//if (MyIsUnitEnemy(handle, MyGetLocalPlayer()) && unit->dwClassId == HERO_ID_ZG)
+		if (MyIsUnitEnemy(handle, MyGetLocalPlayer()) && unit->dwClassId == HERO_ID_ZG)
 		{
 			float ax = MyGetUnitX(handle);
 			float ay = MyGetUnitY(handle);
@@ -217,7 +215,6 @@ void ProcessGameCmd(Unit *unit, Command *CommandData, DWORD targetUint)
 				if (MyIsCanHurtMe(349, ax, ay)) // 点位的t有效距离是350
 				{
 					MyUseSkill(LocalHero, Action_T);
-					// MyUseSkillTarget(LocalHero, Action_XUN_W, handle);
 				}
 			}
 			else if (MyGetUnitTypeId(LocalHero) == HERO_ID_GJ)
@@ -246,27 +243,34 @@ void ProcessGameCmd(Unit *unit, Command *CommandData, DWORD targetUint)
 		}
 		break;
 	}
-#if 0
+#if 1
 	case SLOT_INDEX_START:
 	case SLOT_INDEX_START + 1:
 	case SLOT_INDEX_START + 2:
 	case SLOT_INDEX_START + 3:
 	case SLOT_INDEX_START + 4:
-	case SLOT_INDEX_START + 5: {
-		if (MyIsUnitEnemy(handle, MyGetLocalPlayer()) && unit->dwClassId != HERO_ID_GY)
+	case SLOT_INDEX_START + 5:
+	{
+		//if (MyIsUnitEnemy(handle, MyGetLocalPlayer()) && unit->dwClassId != HERO_ID_GY)
 		{
-			float ax = MyGetUnitX(handle);
-			float ay = MyGetUnitY(handle);
-			if (MyIsCanHurtMe(490, ax, ay))
+			float ax = CommandData->X;
+			float ay = CommandData->Y;
+
+			// 使用了物品栏
+			auto itemid = GetUnitSlotItemID(handle, CommandData->CommandId - SLOT_INDEX_START);
+			// 当前英雄是荀彧
+			if (ITEM_XX == itemid)
 			{
-				//使用了物品栏
-				auto itemid = GetUnitSlotItemID(handle, CommandData->CommandId - SLOT_INDEX_START);
-				// 当前英雄是荀彧
-				if (ITEM_XX == itemid && MyGetUnitTypeId(LocalHero) == HERO_ID_XUN)
+				if (MyGetUnitTypeId(LocalHero) == HERO_ID_XUN && MyIsCanHurtMe(490, ax, ay))
 				{
 					MyUseSkillLoc(LocalHero, Action_XUN_W, ax, ay);
-					// MyUseSkillTarget(LocalHero, Action_XUN_W, handle);
 				}
+
+				if (MyGetUnitTypeId(LocalHero) == HERO_ID_ZG && MyIsCanHurtMe(350, ax, ay))
+				{
+					MyUseSkillLoc(LocalHero, Action_ZG_E, ax, ay);
+				}
+				// MyUseSkillTarget(LocalHero, Action_XUN_W, handle);
 			}
 		}
 		break;
