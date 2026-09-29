@@ -254,6 +254,7 @@ void TargetOrderIssue(DWORD myhUnit, DWORD orderId, DWORD item, float x, float y
 {
 	__try
 	{
+		ClearSelection();
 		MySelectUnit(myhUnit, true);
 		__asm
 		{
@@ -285,6 +286,7 @@ void UseItemWithNoLocation(DWORD myhUnit, DWORD orderId, DWORD item)
 {
 	__try
 	{
+		ClearSelection();
 		MySelectUnit(myhUnit, true);
 		//MySelectUnitReal(myhUnit);
 		__asm
@@ -355,8 +357,7 @@ bool MyUseItem(HUNIT myUnit, DWORD itemTypeId)
 
 		if (tmpTypeId == itemTypeId) // 玄武
 		{
-			// if (true || MyIsItemUseable(tmpItem, i))
-			MySelectUnitReal(myUnit);
+			//MySelectUnitReal(myUnit);
 			if (MyIsItemUseable(tmpItem, i))
 			{
 				spdlog::info("item useable");

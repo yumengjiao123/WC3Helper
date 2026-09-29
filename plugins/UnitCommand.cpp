@@ -28,13 +28,11 @@ void ZSGWS_T(DWORD hUnit, float x, float y)
 
 	if (MyUseItem(LocalHero, ITEM_XW))
 	{
-		// MyWriteTextToScreen("[|cFFFF9900JasHack|r]|cFF999999:|r触发|cFFCE0005[玄武]|r躲技能!!!");
+		// TextPrint("[|cFFFF9900W3CHelper|r]|cFF999999:|r触发|cFFCE0005[玄武]|r躲技能!!!");
 		if (MyGetUnitTypeId(LocalHero) == HERO_ID_XUN)
 		{
 			// MyUseSkillTarget(LocalHero, Action_XUN_W, hUnit);
-			float ax = MyGetUnitX(hUnit);
-			float ay = MyGetUnitY(hUnit);
-			MyUseSkillLoc(LocalHero, Action_XUN_W, ax, ay);
+			MyUseSkillLoc(LocalHero, Action_XUN_W, x, y);
 			return;
 		}
 		return;
@@ -48,7 +46,7 @@ void ZSGWS_T(DWORD hUnit, float x, float y)
 
 	if (MyUseItemTarget(LocalHero, ITEM_YZ, hUnit))
 	{
-		// MyWriteTextToScreen("[|cFFFF9900JasHack|r]|cFF999999:|r触发|cFFCE0005[巫术魔杖]|r躲技能!!!");
+		// TextPrint("[|cFFFF9900W3CHelper|r]|cFF999999:|r触发|cFFCE0005[巫术魔杖]|r躲技能!!!");
 		if (MyGetUnitTypeId(LocalHero) == HERO_ID_XUN)
 		{
 			// MyUseSkillTarget(LocalHero, Action_XUN_W, hUnit);
@@ -64,14 +62,14 @@ void ZSGWS_T(DWORD hUnit, float x, float y)
 
 	if (MyUseItemTarget(LocalHero, ITEM_FZ, hUnit))
 	{
-		// MyWriteTextToScreen("[|cFFFF9900JasHack|r]|cFF999999:|r触发|cFFCE0005[风暴之杖]|r躲技能!!!");
+		// TextPrint("[|cFFFF9900W3CHelper|r]|cFF999999:|r触发|cFFCE0005[风暴之杖]|r躲技能!!!");
 		return;
 	}
 
 	Location loc = MyGetUnitFaceLoc(LocalHero, 700);
 	if (MyUseItemLoc(LocalHero, ITEM_XX, loc.X, loc.Y))
 	{
-		// MyWriteTextToScreen(WideCharToUTF8(L"[|cFFFF9900JasHack|r]|cFF999999:|r触发|cFFCE0005[翔靴]|r躲技能!!!"));
+		// TextPrint(WideCharToUTF8(L"[|cFFFF9900W3CHelper|r]|cFF999999:|r触发|cFFCE0005[翔靴]|r躲技能!!!"));
 		return;
 	}
 
@@ -251,7 +249,7 @@ void ProcessGameCmd(Unit *unit, Command *CommandData, DWORD targetUint)
 	case SLOT_INDEX_START + 4:
 	case SLOT_INDEX_START + 5:
 	{
-		//if (MyIsUnitEnemy(handle, MyGetLocalPlayer()) && unit->dwClassId != HERO_ID_GY)
+		if (MyIsUnitEnemy(handle, MyGetLocalPlayer()) && unit->dwClassId != HERO_ID_GY)
 		{
 			float ax = CommandData->X;
 			float ay = CommandData->Y;
@@ -270,6 +268,17 @@ void ProcessGameCmd(Unit *unit, Command *CommandData, DWORD targetUint)
 				{
 					MyUseSkillLoc(LocalHero, Action_ZG_E, ax, ay);
 				}
+
+				if (MyGetUnitTypeId(LocalHero) == HERO_ID_SM && MyIsCanHurtMe(500, ax, ay))
+				{
+					MyUseSkillLoc(LocalHero, Action_41_E, ax, ay);
+				}
+
+				if ((MyGetUnitTypeId(LocalHero) == HERO_ID_ZF || MyGetUnitTypeId(LocalHero) == HERO_ID_DW) && MyIsCanHurtMe(350, ax, ay))
+				{
+					MyUseSkill(LocalHero, Action_T);
+				}
+
 				// MyUseSkillTarget(LocalHero, Action_XUN_W, handle);
 			}
 		}

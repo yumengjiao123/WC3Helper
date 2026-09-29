@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <cstdio>
 #include <cmath>
+#include <format>
 
 extern LPVOID g_gameDllBase;
 extern LPVOID g_stormDllBase;
@@ -274,21 +275,14 @@ void WfeCooldownUpdate(CCommandButton *btn, float remain)
 		g_frames[(DWORD)btn] = tf;
 	}
 
-	char text[16];
-	if (remain < 1.0f)
-	{
-		_snprintf_s(text, sizeof(text), _TRUNCATE, "%.2f", remain);
-	}
-	else
-	{
-		_snprintf_s(text, sizeof(text), "%d", (int)std::ceil(remain));
-	}
+	std::string text = remain < 1.0f ? std::format("{:3.2f}", remain)
+									 : std::format("{:.0f}", std::trunc(remain));
 
 	// 值没变就不重复 SetText
 	const char *cur = *(const char **)((BYTE *)tf + WFE_TEXT_BUF);
-	if (!cur || strcmp(cur, text) != 0)
+	if (!cur || strcmp(cur, text.c_str()) != 0)
 	{
-		g_tfSetText(tf, text);
+		g_tfSetText(tf, text.c_str());
 	}
 }
 
