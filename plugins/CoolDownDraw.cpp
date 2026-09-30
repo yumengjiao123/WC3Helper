@@ -366,11 +366,11 @@ void UnHookCooldown()
 	}
 
 	UnFunHook((void *)g_oCdSweepTick, (void *)MyCdSweepTick);
-// #ifndef WC3HELPER_BASIC
-// 	UnFunHook((void *)g_oIsDrawSkillPanel, (void *)MyIsDrawSkillPanel);
-// 	UnFunHook((void *)g_oIsDrawSkillPanelOverlay, (void *)MyIsDrawSkillPanelOverlay);
-// 	UnFunHook((void *)g_oIsNeedDrawUnit2, (void *)MyIsNeedDrawUnit2);
-// #endif
+	// #ifndef WC3HELPER_BASIC
+	// 	UnFunHook((void *)g_oIsDrawSkillPanel, (void *)MyIsDrawSkillPanel);
+	// 	UnFunHook((void *)g_oIsDrawSkillPanelOverlay, (void *)MyIsDrawSkillPanelOverlay);
+	// 	UnFunHook((void *)g_oIsNeedDrawUnit2, (void *)MyIsNeedDrawUnit2);
+	// #endif
 	// UnFunHook((void *)g_oRealFunc, (void *)SetCdForAddr);
 	g_ButtonQueue.clear(); // 已废弃，清空以防万一
 }
@@ -439,8 +439,6 @@ static bool GetButtonRemainingCd(CCommandButton *cmdbt, float *remain)
 // 每个指针都校验 vtable == CCommandButton::vftable，防止读到已释放内存
 bool CollectCommandButtons(std::vector<CCommandButton *> &out)
 {
-	out.clear();
-	out.reserve(24); // 12 技能 + 6 物品，留余量避免反复扩容
 	if (!g_gameDllBase)
 	{
 		return false;
@@ -469,7 +467,7 @@ bool CollectCommandButtons(std::vector<CCommandButton *> &out)
 	{
 		return false;
 	}
-	
+
 	g_oldGameUI = gameUI;
 	out.clear();
 

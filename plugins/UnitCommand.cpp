@@ -205,20 +205,16 @@ void ProcessGameCmd(Unit *unit, Command *CommandData, DWORD targetUint)
 					// MyUseSkillTarget(LocalHero, Action_XUN_W, handle);
 				}
 			}
-			// 当前英雄是点位
+			// 当前英雄是典韦
 			else if (MyGetUnitTypeId(LocalHero) == HERO_ID_DW || MyGetUnitTypeId(LocalHero) == HERO_ID_ZF)
 			{
-				// float ax = MyGetUnitX(handle);
-				// float ay = MyGetUnitY(handle);
-				if (MyIsCanHurtMe(349, ax, ay)) // 点位的t有效距离是350
+				if (MyIsCanHurtMe(349, ax, ay)) // 典韦的t有效距离是350
 				{
 					MyUseSkill(LocalHero, Action_T);
 				}
 			}
 			else if (MyGetUnitTypeId(LocalHero) == HERO_ID_GJ)
 			{
-				// float ax = MyGetUnitX(handle);
-				// float ay = MyGetUnitY(handle);
 				MyUseSkillLoc(LocalHero, Action_GJ_C, ax, ay);
 			}
 		}
@@ -276,7 +272,10 @@ void ProcessGameCmd(Unit *unit, Command *CommandData, DWORD targetUint)
 
 				if ((MyGetUnitTypeId(LocalHero) == HERO_ID_ZF || MyGetUnitTypeId(LocalHero) == HERO_ID_DW) && MyIsCanHurtMe(350, ax, ay))
 				{
-					MyUseSkill(LocalHero, Action_T);
+					if (unit->dwClassId == HERO_ID_ZF || unit->dwClassId == HERO_ID_DW || unit->dwClassId == HERO_ID_ZG)
+					{
+						MyUseSkill(LocalHero, Action_T);
+					}
 				}
 
 				// MyUseSkillTarget(LocalHero, Action_XUN_W, handle);
