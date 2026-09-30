@@ -413,9 +413,10 @@ double __fastcall MyCdSweepTick(DWORD pThis, int dummy)
 
 	// 每次都重新枚举：按钮会随 UI 刷新 / 结束任务重建，
 	// 沿用上一帧缓存的指针会在按钮销毁后读到已释放内存。
-	CollectCommandButtons(g_ButtonQueue);
-	for (auto cmdbt : g_ButtonQueue)
-	{
+	// CollectCommandButtons(g_ButtonQueue);
+	CCommandButton *cmdbt = (CCommandButton *)pThis;
+	// for (auto cmdbt : g_ButtonQueue)
+	// {
 		float remaining = 0.0f;
 		// 无 CD 或只剩尾巴（<0.05s）时传 0 隐藏，避免出现 "0.00"/"0.01"
 		if (GetButtonRemainingCd(cmdbt, &remaining) && remaining > 0.05f)
@@ -426,6 +427,6 @@ double __fastcall MyCdSweepTick(DWORD pThis, int dummy)
 		{
 			WfeCooldownUpdate(cmdbt, 0.0f);
 		}
-	}
+	// }
 	return g_oCdSweepTick(pThis, dummy);
 }
