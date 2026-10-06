@@ -211,6 +211,30 @@ bool MyIsUnitHero(HUNIT hUnit)
 	return GetHeroLevel(hUnit) > 0;
 }
 
+// 判断单位是否魔法免疫
+bool MyIsUnitMagicImmune(HUNIT hUnit)
+{
+	if (!hUnit)
+	{
+		return false;
+	}
+
+	unsigned char *unit = nullptr;
+	__asm
+	{
+		mov ecx, hUnit;
+		call addrUnitName1; // 单位句柄 -> CUnit*（1.24 0x3BE7F0 / 1.27 0x1D1550）
+		mov unit, eax;
+	}
+
+	if (!unit)
+	{
+		return false;
+	}
+
+	return *(int *)(unit + 0x15C) > 0;
+}
+
 DWORD __stdcall GetItemState(DWORD slotPos, DWORD opt, DWORD itemPtr)
 {
 	DWORD re = 0xD2;

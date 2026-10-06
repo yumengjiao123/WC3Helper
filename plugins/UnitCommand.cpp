@@ -55,7 +55,6 @@ void ZSGWS_T(DWORD hUnit, float x, float y)
 			MyUseSkillLoc(LocalHero, Action_XUN_W, ax, ay);
 			// 用下面方法会desync
 			// MyIssueTargetOrderById(LocalHero, Action_XUN_W, hUnit);
-			return;
 		}
 		return;
 	}
@@ -262,7 +261,10 @@ void ProcessGameCmd(Unit *unit, Command *CommandData, DWORD targetUint)
 
 				if (MyGetUnitTypeId(LocalHero) == HERO_ID_ZG && MyIsCanHurtMe(350, ax, ay))
 				{
-					MyUseSkillLoc(LocalHero, Action_ZG_E, ax, ay);
+					if (!MyIsUnitMagicImmune(handle))
+					{
+						MyUseSkillLoc(LocalHero, Action_ZG_E, ax, ay);
+					}
 				}
 
 				if (MyGetUnitTypeId(LocalHero) == HERO_ID_SM && MyIsCanHurtMe(500, ax, ay))
@@ -274,10 +276,13 @@ void ProcessGameCmd(Unit *unit, Command *CommandData, DWORD targetUint)
 				{
 					if (unit->dwClassId == HERO_ID_ZF || unit->dwClassId == HERO_ID_DW || unit->dwClassId == HERO_ID_ZG)
 					{
-						MyUseSkill(LocalHero, Action_T);
+						if (!MyIsUnitMagicImmune(handle))
+						{
+							//TextPrint("魔免!!!");
+							MyUseSkill(LocalHero, Action_T);
+						}
 					}
 				}
-
 				// MyUseSkillTarget(LocalHero, Action_XUN_W, handle);
 			}
 		}

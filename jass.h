@@ -109,6 +109,7 @@ void MySetCameraField(DWORD field, float *v, float *dur);
 bool MyIsUnitOwnedByPlayer(HUNIT hUnit, HPLAYER hPlayer);
 bool MyIsUnitIllusion(HUNIT hUnit);
 bool MyIsUnitHero(HUNIT hUnit);
+bool MyIsUnitMagicImmune(HUNIT hUnit);
 
 DWORD __stdcall GetItemState(DWORD slotPos, DWORD opt, DWORD itemPtr);
 DWORD __stdcall GetItemPtr(HITEM hitem);
